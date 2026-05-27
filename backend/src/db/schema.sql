@@ -6,7 +6,11 @@ CREATE EXTENSION IF NOT EXISTS "vector";  -- pgvector for embeddings
 -- Users
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  email TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE,
+  name TEXT,
+  phone_number TEXT,
+  birthday DATE,
+  language TEXT DEFAULT 'en',
   push_token TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -17,6 +21,7 @@ CREATE TABLE IF NOT EXISTS calls (
   user_id UUID NOT NULL REFERENCES users(id),
   company TEXT NOT NULL,
   phone_number TEXT NOT NULL,
+  user_phone_number TEXT,
   goal TEXT NOT NULL DEFAULT 'reach_human',
   status TEXT NOT NULL DEFAULT 'INIT',
   twilio_call_sid TEXT,
@@ -24,8 +29,12 @@ CREATE TABLE IF NOT EXISTS calls (
   conference_sid TEXT,
   started_at TIMESTAMPTZ DEFAULT NOW(),
   ended_at TIMESTAMPTZ,
+  ended_reason TEXT,
   human_reached BOOLEAN DEFAULT FALSE,
+  human_confidence FLOAT,
   wait_duration_seconds INTEGER,
+  recording_sid TEXT,
+  recording_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -51,6 +60,7 @@ CREATE TABLE IF NOT EXISTS transcripts (
   call_id UUID NOT NULL REFERENCES calls(id) ON DELETE CASCADE,
   speaker TEXT NOT NULL CHECK (speaker IN ('AI', 'IVR', 'HUMAN')),
   text TEXT NOT NULL,
+  human_confidence FLOAT,
   timestamp TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -68,6 +78,18 @@ CREATE TABLE IF NOT EXISTS action_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_action_history_call_id ON action_history(call_id);
+
+-- Company IVR Notes (post-call LLM summaries for future calls to same company)
+CREATE TABLE IF NOT EXISTS company_ivr_notes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  company TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ivr_notes_company ON company_ivr_notes(company);
 
 -- Adaptive Memory Patterns (THE CORE PRODUCT ASSET)
 CREATE TABLE IF NOT EXISTS memory_patterns (
