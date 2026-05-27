@@ -45,5 +45,7 @@ export const config = {
   app: {
     baseUrl: process.env.APP_BASE_URL ?? 'http://localhost:3000',
     webhookBaseUrl: process.env.WEBHOOK_BASE_URL ?? 'http://localhost:3000/webhooks',
+    apiKey: process.env.API_KEY ?? null,     // optional — if set, required on write endpoints
+    sentryDsn: process.env.SENTRY_DSN ?? null, // optional — enables Sentry error tracking
   },
 } as const;

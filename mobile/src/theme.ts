@@ -18,6 +18,7 @@ export const STATUS: Record<string, { color: string; bg: string; label: string; 
   INIT:           { color: colors.subtext,  bg: '#1e293b',  label: 'Starting' },
   DIALING:        { color: colors.yellow,   bg: '#422006',  label: 'Dialing',          pulse: true },
   IVR_NAVIGATION: { color: colors.blue,     bg: '#1e3a5f',  label: 'Navigating IVR',   pulse: true },
+  EXPLORATION:    { color: colors.orange,   bg: '#431407',  label: 'Exploring',         pulse: true },
   ON_HOLD:        { color: colors.orange,   bg: '#431407',  label: 'On Hold',           pulse: true },
   HUMAN_DETECTED: { color: colors.green,    bg: '#14532d',  label: 'Human Found!' },
   USER_NOTIFIED:  { color: colors.green,    bg: '#14532d',  label: 'Connecting You…' },
@@ -26,4 +27,4 @@ export const STATUS: Record<string, { color: string; bg: string; label: string; 
   FAILED:         { color: colors.red,      bg: '#450a0a',  label: 'Failed' },
 };
 
-export const ACTIVE_STATUSES = ['INIT', 'DIALING', 'IVR_NAVIGATION', 'ON_HOLD', 'HUMAN_DETECTED', 'USER_NOTIFIED'];
+export const ACTIVE_STATUSES = ['INIT', 'DIALING', 'IVR_NAVIGATION', 'EXPLORATION', 'ON_HOLD', 'HUMAN_DETECTED', 'USER_NOTIFIED'];

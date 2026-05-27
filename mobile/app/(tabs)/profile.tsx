@@ -3,7 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/theme';
-import { getUserId, setUserId, createUser, getUser, updateUser, getApiUrl, setApiUrl, getIvrNotes, IvrNote } from '@/api';
+import { getUserId, setUserId, createUser, getUser, updateUser, getApiUrl, setApiUrl, getApiKey, setApiKey, getIvrNotes, IvrNote } from '@/api';
 
 const LANGUAGES = [
   { code: 'en',    label: 'English'  },
@@ -19,6 +19,7 @@ export default function ProfileScreen() {
   const [email, setEmail]     = useState('');
   const [language, setLanguage] = useState<'en' | 'zh-TW' | 'zh-CN'>('en');
   const [apiUrl, setLocalApiUrl] = useState('');
+  const [apiKey, setLocalApiKey] = useState('');
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
   const [noteCompany, setNoteCompany] = useState('');
@@ -29,6 +30,7 @@ export default function ProfileScreen() {
   useEffect(() => {
     (async () => {
       setLocalApiUrl(await getApiUrl());
+      setLocalApiKey(await getApiKey());
       try {
         let uid = await getUserId();
         if (!uid) { const u = await createUser(); uid = u.id; await setUserId(uid); }
@@ -47,6 +49,7 @@ export default function ProfileScreen() {
     setSaving(true);
     try {
       await setApiUrl(apiUrl.trim() || 'http://localhost:3000');
+      await setApiKey(apiKey.trim());
 
       let uid = userId;
       if (!uid) {
@@ -109,6 +112,8 @@ export default function ProfileScreen() {
           <Text style={s.hint}>Set this to your ngrok URL or local IP when running on a physical device</Text>
           <F label="API URL" placeholder="https://xxxx.ngrok-free.dev" value={apiUrl}
             onChangeText={setLocalApiUrl} autoCapitalize="none" keyboardType="url" />
+          <F label="API Key" placeholder="Leave empty if auth is disabled" value={apiKey}
+            onChangeText={setLocalApiKey} autoCapitalize="none" secureTextEntry />
           <TouchableOpacity style={s.testBtn} onPress={async () => {
             const url = apiUrl.trim();
             Alert.alert('Testing…', `Connecting to:\n${url}`);

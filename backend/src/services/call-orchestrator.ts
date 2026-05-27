@@ -2,10 +2,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { CallStateMachine } from '../state-machine/CallStateMachine';
 import { DeepgramTranscriptionSession } from './transcription';
 import { decideLLMAction } from './llm-engine';
-import { getMemoryPatterns, recordCallOutcome, markActionSuccess } from './memory';
+import { getMemoryPatterns, recordCallOutcome, markActionSuccess, getActionPatterns } from './memory';
+import { emitCallStatus } from './call-events';
 import { generateCallSummary } from './call-summarizer';
 import { initiateOutboundCall, sendDTMF, sayPhrase, createConferenceBridge, createConferenceWithHold, bridgeUserToConference, endCall } from './telephony';
-import { detectHumanCombined, isHoldMusic } from './human-detector';
+import { detectHumanCombined, isHoldMusic, extractMenuKeys } from './human-detector';
 import { AudioAnalyzer, AudioAnalysisResult } from './audio-analyzer';
 import { query, queryOne } from '../db/client';
 import { config } from '../config';
@@ -109,6 +110,7 @@ export class CallOrchestrator {
 
   async onCallConnected(): Promise<void> {
     await this.stateMachine.transition('call_connected');
+    emitCallStatus(this.call.id, 'IVR_NAVIGATION');
     // Decisions are handled by the Gather webhook loop, not a timer
   }
 
@@ -120,6 +122,7 @@ export class CallOrchestrator {
   private cachedMemories: import('../types').MemoryPattern[] | null = null;
   private cachedIvrNotes: string | null | undefined = undefined; // undefined = not loaded yet
   private cachedUserRow: { name?: string; birthday?: string; language?: string } | null = null;
+  private cachedActionPatterns: import('./memory').ActionPattern[] | null = null;
 
   private onTranscript(text: string, isFinal: boolean, speakerChanged: boolean): void {
     if (!isFinal) return;
@@ -150,9 +153,17 @@ export class CallOrchestrator {
 
   private prefetchDecision(triggerText: string): void {
     this.pendingDecisionAt = Date.now();
-    this.pendingDecision = getMemoryPatterns(this.call.company, this.call.goal)
-      .then(memories => {
-        this.cachedMemories = memories;
+
+    const memoriesPromise = this.cachedMemories
+      ? Promise.resolve(this.cachedMemories)
+      : getMemoryPatterns(this.call.company, this.call.goal).then(m => { this.cachedMemories = m; return m; });
+
+    const patternsPromise = this.cachedActionPatterns
+      ? Promise.resolve(this.cachedActionPatterns)
+      : getActionPatterns(this.call.company).then(p => { this.cachedActionPatterns = p; return p; });
+
+    this.pendingDecision = Promise.all([memoriesPromise, patternsPromise])
+      .then(([memories, patterns]) => {
         const context: CallContext = {
           callId: this.call.id,
           company: this.call.company,
@@ -165,7 +176,12 @@ export class CallOrchestrator {
           previousActions: this.actionHistory,
           recentFailures: this.recentFailures,
           userInfo: this.userInfo,
-          currentIvrUtterance: triggerText, // pass what IVR just said so LLM can respond
+          currentIvrUtterance: triggerText,
+          audioAnalysis: this.audioAnalyzer.analyze(),
+          speakerChanged: this.speakerChanged,
+          companyIvrNotes: this.cachedIvrNotes ?? undefined,
+          availableMenuKeys: extractMenuKeys(triggerText),
+          actionPatterns: patterns.length > 0 ? patterns : undefined,
         };
         return decideLLMAction(context);
       })
@@ -191,6 +207,7 @@ export class CallOrchestrator {
   async startExploration(): Promise<void> {
     if (this.stateMachine.can('start_explore')) {
       await this.stateMachine.transition('start_explore');
+      emitCallStatus(this.call.id, 'EXPLORATION');
       console.log(`[Orchestrator] Entering EXPLORATION mode for call ${this.call.id}`);
     }
   }
@@ -288,6 +305,7 @@ export class CallOrchestrator {
           [userCallSid, conferenceName, this.call.id]
         );
         await this.stateMachine.transition('call_bridged');
+        emitCallStatus(this.call.id, 'BRIDGED');
         console.log(`[Orchestrator] Late-bridged ${this.call.userPhoneNumber} into ${conferenceName}`);
       } catch (err) {
         console.error(`[Orchestrator] Failed to late-bridge user for call ${this.call.id}:`, err);
@@ -302,6 +320,7 @@ export class CallOrchestrator {
     if (!this.stateMachine.can('human_detected')) return;
 
     await this.stateMachine.transition('human_detected');
+    emitCallStatus(this.call.id, 'HUMAN_DETECTED');
     console.log(`[Orchestrator] Human detected for call ${this.call.id}!`);
 
     const callSid = this.call.twilioCallSid;
@@ -332,6 +351,7 @@ export class CallOrchestrator {
     }
 
     await this.stateMachine.transition('user_notified');
+    emitCallStatus(this.call.id, 'USER_NOTIFIED');
 
     // Auto-bridge: call user and drop them into the same conference as the representative
     if (conferenceName && this.call.userPhoneNumber) {
@@ -343,6 +363,7 @@ export class CallOrchestrator {
           [userCallSid, conferenceName, this.call.id]
         );
         await this.stateMachine.transition('call_bridged');
+        emitCallStatus(this.call.id, 'BRIDGED');
         console.log(`[Orchestrator] Auto-bridged ${this.call.userPhoneNumber} into ${conferenceName}`);
       } catch (err) {
         console.error(`[Orchestrator] Failed to auto-bridge user for call ${this.call.id}:`, err);
@@ -378,6 +399,7 @@ export class CallOrchestrator {
 
   private async handleCallEnded(humanReached: boolean): Promise<void> {
     this.transcriptionSession.stop();
+    emitCallStatus(this.call.id, 'ENDED');
 
     const callRow = await queryOne<{ wait_duration_seconds: number }>(
       `SELECT wait_duration_seconds FROM calls WHERE id = $1`,

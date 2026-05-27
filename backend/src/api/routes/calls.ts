@@ -5,6 +5,33 @@ import { CallOrchestrator } from '../../services/call-orchestrator';
 import { query, queryOne } from '../../db/client';
 import { sendPushNotification } from '../../services/notifications';
 import { sendSMS } from '../../services/telephony';
+import { callEvents, emitCallStatus } from '../../services/call-events';
+import { config } from '../../config';
+
+// Simple in-memory rate limiter: max 5 POST /calls per IP per minute
+const callRateLimiter = new Map<string, { count: number; resetAt: number }>();
+function checkCallRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = callRateLimiter.get(ip);
+  if (!entry || now > entry.resetAt) {
+    callRateLimiter.set(ip, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  if (entry.count >= 5) return false;
+  entry.count++;
+  return true;
+}
+
+// API key check for write operations
+function requireApiKey(request: any, reply: any, done: () => void) {
+  if (!config.app.apiKey) return done(); // auth disabled if no key configured
+  const provided = request.headers['x-api-key'] ?? request.headers['authorization']?.replace(/^Bearer /, '');
+  if (provided !== config.app.apiKey) {
+    reply.code(401).send({ error: 'Unauthorized' });
+    return;
+  }
+  done();
+}
 
 // In-memory registry of active orchestrators
 const activeOrchestrators = new Map<string, CallOrchestrator>();
@@ -33,7 +60,7 @@ const bridgeCallSchema = z.object({
 
 const callsPlugin: FastifyPluginAsync = async (fastify) => {
   // POST /users — create a new user profile
-  fastify.post('/users', async (request, reply) => {
+  fastify.post('/users', { preHandler: requireApiKey }, async (request, reply) => {
     const body = updateUserSchema.parse(request.body);
     const id = uuidv4();
     await query(
@@ -56,7 +83,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // PATCH /users/:id — update user profile
-  fastify.patch<{ Params: { id: string } }>('/users/:id', async (request, reply) => {
+  fastify.patch<{ Params: { id: string } }>('/users/:id', { preHandler: requireApiKey }, async (request, reply) => {
     const { id } = request.params;
     const body = updateUserSchema.parse(request.body);
 
@@ -82,8 +109,14 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /calls — create and start a new AI call
-  fastify.post('/calls', async (request, reply) => {
+  fastify.post('/calls', { preHandler: requireApiKey }, async (request, reply) => {
     const body = createCallSchema.parse(request.body);
+
+    // Rate limit: max 5 new calls per IP per minute
+    const ip = request.ip ?? '0.0.0.0';
+    if (!checkCallRateLimit(ip)) {
+      return reply.status(429).send({ error: 'Too many calls. Please wait a minute.' });
+    }
 
     // Guard: reject if user already has an active call
     const activeCall = await queryOne<{ id: string }>(
@@ -173,7 +206,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
   );
 
   // POST /calls/:id/bridge — bridge user into call
-  fastify.post<{ Params: { id: string } }>('/calls/:id/bridge', async (request, reply) => {
+  fastify.post<{ Params: { id: string } }>('/calls/:id/bridge', { preHandler: requireApiKey }, async (request, reply) => {
     const { id } = request.params;
     const body = bridgeCallSchema.parse(request.body);
 
@@ -187,7 +220,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // DELETE /calls/:id — end a call
-  fastify.delete<{ Params: { id: string } }>('/calls/:id', async (request, reply) => {
+  fastify.delete<{ Params: { id: string } }>('/calls/:id', { preHandler: requireApiKey }, async (request, reply) => {
     const { id } = request.params;
 
     // Get Twilio call SID before deleting orchestrator
@@ -215,6 +248,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
       `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'user_cancelled' WHERE id = $1`,
       [id]
     );
+    emitCallStatus(id, 'ENDED');
     return { success: true };
   });
 
@@ -229,23 +263,32 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
     });
 
     const sendEvent = (event: string, data: unknown) => {
-      reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      try { reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch {}
     };
 
+    // Send current status immediately
     const orchestrator = activeOrchestrators.get(id);
     if (orchestrator) {
       sendEvent('status', { callId: id, status: orchestrator.getStatus() });
+    } else {
+      const call = await queryOne<{ status: string }>(`SELECT status FROM calls WHERE id = $1`, [id]);
+      if (call) sendEvent('status', { callId: id, status: call.status });
     }
 
-    const interval = setInterval(async () => {
-      const call = await queryOne<{ status: string }>(
-        `SELECT status FROM calls WHERE id = $1`,
-        [id]
-      );
-      if (call) sendEvent('status', { callId: id, status: call.status });
-    }, 2000);
+    // Event-driven: push instantly whenever orchestrator or Gather webhook emits a status change
+    const onStatus = (status: string) => sendEvent('status', { callId: id, status });
+    callEvents.on(`call:${id}`, onStatus);
 
-    request.raw.on('close', () => clearInterval(interval));
+    // Fallback poll every 5s in case an event was missed (e.g. after server restart)
+    const interval = setInterval(async () => {
+      const call = await queryOne<{ status: string }>(`SELECT status FROM calls WHERE id = $1`, [id]);
+      if (call) sendEvent('status', { callId: id, status: call.status });
+    }, 5000);
+
+    request.raw.on('close', () => {
+      callEvents.off(`call:${id}`, onStatus);
+      clearInterval(interval);
+    });
     return reply;
   });
 

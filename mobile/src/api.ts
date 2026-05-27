@@ -36,9 +36,13 @@ export interface Call {
 
 const DEFAULT_API_URL = 'https://keep-disturbed-limited-endless.trycloudflare.com';
 
-const HEADERS = {
-  'Content-Type': 'application/json',
-};
+async function getHeaders(): Promise<Record<string, string>> {
+  const key = await AsyncStorage.getItem('apiKey');
+  return {
+    'Content-Type': 'application/json',
+    ...(key ? { 'X-Api-Key': key } : {}),
+  };
+}
 
 export async function getApiUrl(): Promise<string> {
   const stored = await AsyncStorage.getItem('apiUrl');
@@ -54,6 +58,14 @@ export async function setApiUrl(url: string): Promise<void> {
   await AsyncStorage.setItem('apiUrl', url.replace(/\/$/, ''));
 }
 
+export async function getApiKey(): Promise<string> {
+  return (await AsyncStorage.getItem('apiKey')) ?? '';
+}
+
+export async function setApiKey(key: string): Promise<void> {
+  await AsyncStorage.setItem('apiKey', key);
+}
+
 export async function getUserId(): Promise<string | null> {
   return AsyncStorage.getItem('userId');
 }
@@ -66,7 +78,7 @@ export async function createUser(): Promise<UserProfile> {
   const url = await getApiUrl();
   const res = await fetch(`${url}/users`, {
     method: 'POST',
-    headers: HEADERS,
+    headers: await getHeaders(),
     body: JSON.stringify({}),
   });
   if (!res.ok) throw new Error('Failed to create user');
@@ -75,7 +87,7 @@ export async function createUser(): Promise<UserProfile> {
 
 export async function getUser(userId: string): Promise<UserProfile> {
   const url = await getApiUrl();
-  const res = await fetch(`${url}/users/${userId}`, { headers: HEADERS });
+  const res = await fetch(`${url}/users/${userId}`, { headers: await getHeaders() });
   if (!res.ok) throw new Error('User not found');
   return res.json();
 }
@@ -90,7 +102,7 @@ export async function updateUser(
   const url = await getApiUrl();
   const res = await fetch(`${url}/users/${userId}`, {
     method: 'PATCH',
-    headers: HEADERS,
+    headers: await getHeaders(),
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error('Failed to update user');
@@ -104,7 +116,7 @@ export async function startCall(
   const url = await getApiUrl();
   const res = await fetch(`${url}/calls`, {
     method: 'POST',
-    headers: HEADERS,
+    headers: await getHeaders(),
     body: JSON.stringify({ ...params, userId }),
   });
   if (!res.ok) {
@@ -116,21 +128,21 @@ export async function startCall(
 
 export async function getCalls(userId: string, limit = 20): Promise<Call[]> {
   const url = await getApiUrl();
-  const res = await fetch(`${url}/calls?userId=${userId}&limit=${limit}`, { headers: HEADERS });
+  const res = await fetch(`${url}/calls?userId=${userId}&limit=${limit}`, { headers: await getHeaders() });
   if (!res.ok) return [];
   return res.json();
 }
 
 export async function getCall(callId: string): Promise<Call> {
   const url = await getApiUrl();
-  const res = await fetch(`${url}/calls/${callId}`, { headers: HEADERS });
+  const res = await fetch(`${url}/calls/${callId}`, { headers: await getHeaders() });
   if (!res.ok) throw new Error('Call not found');
   return res.json();
 }
 
 export async function endCall(callId: string): Promise<void> {
   const url = await getApiUrl();
-  await fetch(`${url}/calls/${callId}`, { method: 'DELETE', headers: HEADERS });
+  await fetch(`${url}/calls/${callId}`, { method: 'DELETE', headers: await getHeaders() });
 }
 
 export interface IvrNote {
@@ -141,7 +153,7 @@ export interface IvrNote {
 
 export async function getIvrNotes(company: string): Promise<IvrNote | null> {
   const url = await getApiUrl();
-  const res = await fetch(`${url}/ivr-notes/${encodeURIComponent(company)}`, { headers: HEADERS });
+  const res = await fetch(`${url}/ivr-notes/${encodeURIComponent(company)}`, { headers: await getHeaders() });
   if (!res.ok) return null;
   return res.json();
 }

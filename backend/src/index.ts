@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import formbody from '@fastify/formbody';
@@ -6,6 +7,11 @@ import staticFiles from '@fastify/static';
 import path from 'path';
 import { WebSocket } from 'ws';
 import { config } from './config';
+
+if (config.app.sentryDsn) {
+  Sentry.init({ dsn: config.app.sentryDsn, environment: config.nodeEnv });
+  console.log('[Sentry] Error tracking enabled');
+}
 import callsPlugin from './api/routes/calls';
 import webhooksPlugin, { registerRecordingRoutes } from './api/routes/webhooks';
 import { activeOrchestrators } from './api/routes/calls';
@@ -220,5 +226,6 @@ async function bootstrap() {
 
 bootstrap().catch((err) => {
   console.error('Fatal startup error:', err);
+  if (config.app.sentryDsn) Sentry.captureException(err);
   process.exit(1);
 });

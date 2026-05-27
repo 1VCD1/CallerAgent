@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import * as https from 'https';
+import twilio from 'twilio';
 import { activeOrchestrators } from './calls';
 import { query } from '../../db/client';
 import { getMemoryPatterns, getActionPatterns } from '../../services/memory';
@@ -9,10 +10,32 @@ import { CallContext, ActionRecord, CallStatus } from '../../types';
 import { getLang } from '../../languages';
 import { isOutsideBusinessHours, extractMenuKeys } from '../../services/human-detector';
 import { generateCallSummary, getCompanyIvrNotes } from '../../services/call-summarizer';
+import { emitCallStatus } from '../../services/call-events';
+
+// Derive the public base URL (scheme + host, no path) from webhookBaseUrl for Twilio sig validation
+const webhookOrigin = (() => {
+  try { return new URL(config.app.webhookBaseUrl).origin; } catch { return ''; }
+})();
+
+// Validate X-Twilio-Signature so only real Twilio requests reach our webhooks.
+// Only enforced when webhookOrigin is set (i.e. not localhost).
+function validateTwilioSignature(request: any, reply: any, done: () => void) {
+  if (!webhookOrigin || webhookOrigin.includes('localhost')) return done();
+  const signature = (request.headers['x-twilio-signature'] as string) ?? '';
+  const fullUrl = `${webhookOrigin}${request.url}`;
+  const params = (request.body ?? {}) as Record<string, string>;
+  const valid = twilio.validateRequest(config.twilio.authToken, signature, fullUrl, params);
+  if (!valid) {
+    console.warn(`[Webhooks] Invalid Twilio signature for ${request.url}`);
+    reply.code(403).send({ error: 'Forbidden' });
+    return;
+  }
+  done();
+}
 
 const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
   // Twilio call status webhook
-  fastify.post('/webhooks/twilio/status', async (request, reply) => {
+  fastify.post('/webhooks/twilio/status', { preHandler: validateTwilioSignature }, async (request, reply) => {
     const body = request.body as Record<string, string>;
     const { CallSid, CallStatus } = body;
 
@@ -35,6 +58,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
          WHERE id = $1`,
         [callId, CallStatus === 'completed' ? 'completed' : CallStatus]
       );
+      emitCallStatus(callId, 'ENDED');
       activeOrchestrators.delete(callId);
       // Fire post-call summary in background
       generateCallSummary(callId).catch(console.error);
@@ -44,7 +68,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // Twilio Gather webhook — main AI decision loop
-  fastify.post('/webhooks/twilio/gather', async (request, reply) => {
+  fastify.post('/webhooks/twilio/gather', { preHandler: validateTwilioSignature }, async (request, reply) => {
     const body = request.body as Record<string, string>;
     const query_params = request.query as Record<string, string>;
     const callId = query_params.callId;
@@ -74,6 +98,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'outside_hours' WHERE id = $1`,
         [callId]
       );
+      emitCallStatus(callId, 'ENDED');
       if (orchestrator) activeOrchestrators.delete(callId);
       reply.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
       return;
@@ -203,6 +228,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'max_attempts' WHERE id = $1`,
         [callId]
       );
+      emitCallStatus(callId, 'ENDED');
       activeOrchestrators.delete(callId);
       reply.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -269,6 +295,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
            WHERE id = $1`,
           [callId]
         );
+        emitCallStatus(callId, 'HUMAN_DETECTED');
 
         const conferenceName = `conf-${callId}`;
 
@@ -304,6 +331,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
             `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'low_confidence' WHERE id = $1`,
             [callId]
           );
+          emitCallStatus(callId, 'ENDED');
           activeOrchestrators.delete(callId);
           reply.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -346,6 +374,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
           `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'llm_error' WHERE id = $1`,
           [callId]
         );
+        emitCallStatus(callId, 'ENDED');
         activeOrchestrators.delete(callId);
         twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
