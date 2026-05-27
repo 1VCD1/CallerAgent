@@ -127,6 +127,9 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       timestamp: a.timestamp,
     }));
 
+    // Keep the orchestrator's action cache in sync so prefetchDecision has real previousActions
+    if (orchestrator) orchestrator.updateActionCache(previousActions);
+
     // Get call info
     const callRow = await query<{ company: string; goal: string; status: string; user_id: string }>(
       `SELECT company, goal, status, user_id FROM calls WHERE id = $1`,

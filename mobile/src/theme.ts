@@ -27,4 +27,4 @@ export const STATUS: Record<string, { color: string; bg: string; label: string; 
   FAILED:         { color: colors.red,      bg: '#450a0a',  label: 'Failed' },
 };
 
-export const ACTIVE_STATUSES = ['INIT', 'DIALING', 'IVR_NAVIGATION', 'EXPLORATION', 'ON_HOLD', 'HUMAN_DETECTED', 'USER_NOTIFIED'];
+export const ACTIVE_STATUSES = ['INIT', 'DIALING', 'IVR_NAVIGATION', 'EXPLORATION', 'ON_HOLD', 'HUMAN_DETECTED', 'USER_NOTIFIED', 'BRIDGED'];

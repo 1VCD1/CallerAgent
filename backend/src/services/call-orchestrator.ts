@@ -123,6 +123,8 @@ export class CallOrchestrator {
   private cachedIvrNotes: string | null | undefined = undefined; // undefined = not loaded yet
   private cachedUserRow: { name?: string; birthday?: string; language?: string } | null = null;
   private cachedActionPatterns: import('./memory').ActionPattern[] | null = null;
+  // Updated by the Gather webhook after each turn so prefetch has real previousActions
+  private cachedRecentActions: ActionRecord[] = [];
 
   private onTranscript(text: string, isFinal: boolean, speakerChanged: boolean): void {
     if (!isFinal) return;
@@ -173,8 +175,8 @@ export class CallOrchestrator {
           currentTranscript: this.transcriptionSession.getFullTranscript(),
           historicalMemory: memories,
           currentCallState: this.stateMachine.getStatus(),
-          previousActions: this.actionHistory,
-          recentFailures: this.recentFailures,
+          previousActions: this.cachedRecentActions,
+          recentFailures: this.cachedRecentActions.filter(a => !a.success).map(a => `${a.action}(${a.value})`),
           userInfo: this.userInfo,
           currentIvrUtterance: triggerText,
           audioAnalysis: this.audioAnalyzer.analyze(),
@@ -210,6 +212,10 @@ export class CallOrchestrator {
       emitCallStatus(this.call.id, 'EXPLORATION');
       console.log(`[Orchestrator] Entering EXPLORATION mode for call ${this.call.id}`);
     }
+  }
+
+  updateActionCache(actions: ActionRecord[]): void {
+    this.cachedRecentActions = actions;
   }
 
   getCachedMemories(): import('../types').MemoryPattern[] | null {
