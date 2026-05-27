@@ -114,6 +114,10 @@ ${ctx.userInfo.birthday ? `  Date of birth: ${ctx.userInfo.birthday}` : ''}`.tri
     ? `\n🚨 DTMF STUCK: You pressed key "${ctx.consecutiveSameKey.key}" ${ctx.consecutiveSameKey.count} times and the IVR still said "didn't get that". This IVR does NOT accept DTMF for this question — it only accepts voice. Switch to say_phrase("yes") or say_phrase("no") immediately. Do NOT press this key again.`
     : '';
 
+  const lowConfWarning = ctx.consecutiveLowConfidence && ctx.consecutiveLowConfidence >= 2
+    ? `\n⚠️ LOW CONFIDENCE (${ctx.consecutiveLowConfidence} turns): You have been uncertain for multiple turns. Pick a decisive action this turn — press "0", say "representative", or try a completely different key. Do NOT wait or retry. Your next action must have confidence >= 0.6.`
+    : '';
+
   const explorationBlock = ctx.currentCallState === 'EXPLORATION'
     ? `\n🔍 EXPLORATION MODE — Standard menu paths exhausted. Try unconventional approaches:
   - Press "0" repeatedly to force an operator transfer
@@ -164,6 +168,7 @@ ${userInfoBlock}
 ${menuKeysBlock}
 ${waitWarning}
 ${sameKeyWarning}
+${lowConfWarning}
 ${explorationBlock}
 ${ivrNotesBlock}
 ${patternBlock}
@@ -195,7 +200,13 @@ function formatAction(a: ActionRecord): string {
 }
 
 function formatMemory(m: MemoryPattern): string {
-  return `Path: ${m.path.join(' → ')} | Success: ${(m.successRate * 100).toFixed(0)}% | Avg wait: ${m.avgWaitSeconds}s`;
+  const waitStr = m.avgWaitSeconds
+    ? m.avgWaitSeconds < 60 ? `${m.avgWaitSeconds}s` : `${(m.avgWaitSeconds / 60).toFixed(1)}min`
+    : 'unknown';
+  const speedTag = m.avgWaitSeconds
+    ? m.avgWaitSeconds <= 60 ? '⚡fast' : m.avgWaitSeconds <= 180 ? '🕐medium' : '🐢slow'
+    : '';
+  return `[score:${m.strategyScore.toFixed(2)}] ${m.path.join(' → ')} | ${(m.successRate * 100).toFixed(0)}% success | ${waitStr} wait ${speedTag}`;
 }
 
 function parseAction(text: string): LLMAction {

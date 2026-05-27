@@ -51,6 +51,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
 
     const spokenText = body.SpeechResult ?? '';
     const digits = body.Digits ?? '';
+    const lowConf = parseInt((query_params.lowConf ?? '0'), 10);
 
     console.log(`[Gather] callId=${callId} speech="${spokenText}" digits="${digits}"`);
 
@@ -233,6 +234,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       consecutiveSameKey,
       audioAnalysis: orchestrator?.getAudioAnalysis() ?? null,
       actionPatterns: actionPatterns.length > 0 ? actionPatterns : undefined,
+      consecutiveLowConfidence: lowConf > 0 ? lowConf : undefined,
     };
 
     let twiml: string;
@@ -286,7 +288,35 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         return;
       }
 
-      const gatherUrl = `${config.app.webhookBaseUrl}/twilio/gather?callId=${callId}`;
+      // Confidence tracking — count consecutive low-confidence turns
+      const newLowConf = (action.confidence ?? 0.5) < 0.45 ? lowConf + 1 : 0;
+      if (newLowConf > 0) console.log(`[Gather] Low confidence turn ${newLowConf}/3 (conf=${action.confidence?.toFixed(2)})`);
+
+      if (newLowConf >= 3) {
+        if (currentStatus === 'IVR_NAVIGATION' && orchestrator) {
+          // Confidence collapsed — jump to EXPLORATION without waiting for 8-action threshold
+          console.log(`[Gather] 3 consecutive low-confidence turns — triggering EXPLORATION early`);
+          await orchestrator.startExploration();
+        } else if (currentStatus === 'EXPLORATION') {
+          // Already exploring and still lost — give up
+          console.log(`[Gather] Low confidence in EXPLORATION — ending call`);
+          await query(
+            `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'low_confidence' WHERE id = $1`,
+            [callId]
+          );
+          activeOrchestrators.delete(callId);
+          reply.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="${langConfig.ttsVoice}">We were unable to navigate to a representative. Please try calling again later.</Say>
+  <Hangup/>
+</Response>`);
+          return;
+        }
+      }
+
+      const lowConfParam = newLowConf > 0 ? `&lowConf=${newLowConf}` : '';
+      const gatherUrl = `${config.app.webhookBaseUrl}/twilio/gather?callId=${callId}${lowConfParam}`;
+
       // escalate_to_user with low confidence means LLM is uncertain — don't hang up, just wait
       const safeAction = (action.action === 'escalate_to_user' && humanConf < 0.75) ? 'wait' : action.action;
       const safeValue  = safeAction === 'wait' ? '3' : action.value;
@@ -323,7 +353,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
   <Hangup/>
 </Response>`;
       } else {
-        const gatherUrl = `${config.app.webhookBaseUrl}/twilio/gather?callId=${callId}&retries=${retries + 1}`;
+        const gatherUrl = `${config.app.webhookBaseUrl}/twilio/gather?callId=${callId}&retries=${retries + 1}&lowConf=${lowConf}`;
         twiml = buildGatherTwiML(gatherUrl);
       }
     }

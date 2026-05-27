@@ -49,8 +49,9 @@ export interface CallContext {
   availableMenuKeys?: string[];       // DTMF keys explicitly mentioned in current menu
   companyIvrNotes?: string;           // post-call LLM summaries from prior calls to this company
   currentIvrUtterance?: string;       // what the IVR said just now (this turn only)
-  consecutiveWaits?: number;          // how many consecutive wait actions taken so far
-  consecutiveSameKey?: { key: string; count: number }; // same DTMF key pressed N times in a row
+  consecutiveWaits?: number;
+  consecutiveSameKey?: { key: string; count: number };
+  consecutiveLowConfidence?: number;  // how many consecutive turns the LLM had confidence < 0.45
   actionPatterns?: Array<{ action: string; value: string | null; total: number; successPct: number }>;
   audioAnalysis?: {
     isHuman: boolean;
@@ -76,6 +77,7 @@ export interface MemoryPattern {
   path: string[];
   successRate: number;
   avgWaitSeconds: number;
+  strategyScore: number;
   lastVerifiedAt: Date;
   strategyEmbedding?: number[];
 }

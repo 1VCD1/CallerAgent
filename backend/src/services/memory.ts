@@ -25,10 +25,11 @@ export async function getMemoryPatterns(company: string, goal: string): Promise<
     id: string; company: string; goal: string; path: string[];
     success_rate: number; sample_count: number; avg_wait_seconds: number; last_verified_at: Date;
   }>(
-    `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at
+    `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
+            (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
      FROM memory_patterns
      WHERE LOWER(company) = LOWER($1) AND LOWER(goal) = LOWER($2)
-     ORDER BY success_rate DESC, sample_count DESC
+     ORDER BY strategy_score DESC, sample_count DESC
      LIMIT 5`,
     [company, goal]
   );
@@ -45,11 +46,12 @@ export async function getMemoryPatterns(company: string, goal: string): Promise<
     last_verified_at: Date; distance: number;
   }>(
     `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
-            (strategy_embedding <=> $1::vector) AS distance
+            (strategy_embedding <=> $1::vector) AS distance,
+            (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
      FROM memory_patterns
      WHERE strategy_embedding IS NOT NULL
        AND id != ALL($2::uuid[])
-     ORDER BY distance ASC
+     ORDER BY distance ASC, strategy_score DESC
      LIMIT $3`,
     [
       `[${embedding.join(',')}]`,
@@ -177,6 +179,7 @@ function toMemoryPattern(r: any): MemoryPattern {
     path: r.path,
     successRate: r.success_rate,
     avgWaitSeconds: r.avg_wait_seconds,
+    strategyScore: parseFloat(r.strategy_score ?? '0'),
     lastVerifiedAt: r.last_verified_at,
   };
 }
