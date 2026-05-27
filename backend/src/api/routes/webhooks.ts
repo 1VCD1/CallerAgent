@@ -5,7 +5,7 @@ import { query } from '../../db/client';
 import { getMemoryPatterns } from '../../services/memory';
 import { decideLLMAction } from '../../services/llm-engine';
 import { config } from '../../config';
-import { CallContext, ActionRecord } from '../../types';
+import { CallContext, ActionRecord, CallStatus } from '../../types';
 import { getLang } from '../../languages';
 import { isOutsideBusinessHours, extractMenuKeys } from '../../services/human-detector';
 import { generateCallSummary, getCompanyIvrNotes } from '../../services/call-summarizer';
@@ -184,6 +184,15 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       [callId]
     );
     const totalActions = parseInt(totalActionsRow[0]?.count ?? '0', 10);
+
+    // Transition to EXPLORATION after 8 actions stuck in IVR_NAVIGATION
+    if (callStatus === 'IVR_NAVIGATION' && totalActions >= 8 && orchestrator) {
+      await orchestrator.startExploration();
+    }
+
+    // Re-read status in case startExploration just changed it
+    const currentStatus: CallStatus = (orchestrator?.getStatus() ?? callStatus) as CallStatus;
+
     if (totalActions >= 20) {
       console.log(`[Gather] Max navigation attempts (${totalActions}) reached for call ${callId} — ending call`);
       await query(
@@ -207,7 +216,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       goal,
       currentTranscript: fullTranscript || spokenText,
       historicalMemory: memories ?? [],
-      currentCallState: 'IVR_NAVIGATION',
+      currentCallState: currentStatus,
       previousActions,
       recentFailures,
       userInfo: userInfoObj,

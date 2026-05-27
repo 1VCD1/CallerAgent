@@ -188,6 +188,13 @@ export class CallOrchestrator {
     return decision;
   }
 
+  async startExploration(): Promise<void> {
+    if (this.stateMachine.can('start_explore')) {
+      await this.stateMachine.transition('start_explore');
+      console.log(`[Orchestrator] Entering EXPLORATION mode for call ${this.call.id}`);
+    }
+  }
+
   getCachedMemories(): import('../types').MemoryPattern[] | null {
     return this.cachedMemories;
   }

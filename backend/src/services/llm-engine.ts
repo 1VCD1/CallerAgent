@@ -114,6 +114,16 @@ ${ctx.userInfo.birthday ? `  Date of birth: ${ctx.userInfo.birthday}` : ''}`.tri
     ? `\n🚨 DTMF STUCK: You pressed key "${ctx.consecutiveSameKey.key}" ${ctx.consecutiveSameKey.count} times and the IVR still said "didn't get that". This IVR does NOT accept DTMF for this question — it only accepts voice. Switch to say_phrase("yes") or say_phrase("no") immediately. Do NOT press this key again.`
     : '';
 
+  const explorationBlock = ctx.currentCallState === 'EXPLORATION'
+    ? `\n🔍 EXPLORATION MODE — Standard menu paths exhausted. Try unconventional approaches:
+  - Press "0" repeatedly to force an operator transfer
+  - Try "#" or "*" to return to main menu, then take a different path
+  - Say "operator", "agent", "representative", or "help"
+  - If the IVR offers a callback option, consider accepting it (say "yes")
+  - Try any untried numeric keys from the main menu
+  You MUST try something different from your previous actions.`
+    : '';
+
   const ivrNotesBlock = ctx.companyIvrNotes
     ? `\n📋 PRIOR CALL NOTES FOR ${ctx.company.toUpperCase()} (learn from these):\n${ctx.companyIvrNotes}`
     : '';
@@ -143,6 +153,7 @@ ${userInfoBlock}
 ${menuKeysBlock}
 ${waitWarning}
 ${sameKeyWarning}
+${explorationBlock}
 ${ivrNotesBlock}
 ${audioBlock}
 ${utteranceBlock}
