@@ -34,6 +34,10 @@ export const config = {
     apiKey: requireEnv('ANTHROPIC_API_KEY'),
   },
 
+  openai: {
+    apiKey: process.env.OPENAI_API_KEY ?? null, // optional — used for memory embeddings only
+  },
+
   app: {
     baseUrl: process.env.APP_BASE_URL ?? 'http://localhost:3000',
     webhookBaseUrl: process.env.WEBHOOK_BASE_URL ?? 'http://localhost:3000/webhooks',

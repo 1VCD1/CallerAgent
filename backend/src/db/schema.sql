@@ -109,3 +109,4 @@ CREATE TABLE IF NOT EXISTS memory_patterns (
 CREATE INDEX IF NOT EXISTS idx_memory_patterns_company ON memory_patterns(company);
 CREATE INDEX IF NOT EXISTS idx_memory_patterns_goal ON memory_patterns(goal);
 CREATE INDEX IF NOT EXISTS idx_memory_patterns_success_rate ON memory_patterns(success_rate DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_patterns_embedding ON memory_patterns USING hnsw (strategy_embedding vector_cosine_ops);
