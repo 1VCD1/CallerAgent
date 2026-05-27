@@ -178,6 +178,27 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       return;
     }
 
+    // Short-circuit: max navigation attempts reached — give up gracefully
+    const totalActionsRow = await query<{ count: string }>(
+      `SELECT COUNT(*) as count FROM action_history WHERE call_id = $1`,
+      [callId]
+    );
+    const totalActions = parseInt(totalActionsRow[0]?.count ?? '0', 10);
+    if (totalActions >= 20) {
+      console.log(`[Gather] Max navigation attempts (${totalActions}) reached for call ${callId} — ending call`);
+      await query(
+        `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'max_attempts' WHERE id = $1`,
+        [callId]
+      );
+      activeOrchestrators.delete(callId);
+      reply.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="${langConfig.ttsVoice}">We were unable to reach a representative after multiple attempts. Please try again later.</Say>
+  <Hangup/>
+</Response>`);
+      return;
+    }
+
 
     const context: CallContext = {
       callId,

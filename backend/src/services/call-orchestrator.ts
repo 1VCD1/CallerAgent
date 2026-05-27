@@ -12,7 +12,6 @@ import { config } from '../config';
 import { CallContext, ActionRecord, LLMAction, Call, UserInfo } from '../types';
 import { getLang } from '../languages';
 
-const DECISION_INTERVAL_MS = 3000;
 const MAX_NAVIGATION_ATTEMPTS = 20;
 const HUMAN_CONFIDENCE_THRESHOLD = 0.75;
 
@@ -23,8 +22,6 @@ export class CallOrchestrator {
   private call: Call;
   private actionHistory: ActionRecord[] = [];
   private recentFailures: string[] = [];
-  private decisionTimer: NodeJS.Timeout | null = null;
-  private navigationAttempts = 0;
   private onUserNotify?: (callId: string) => Promise<void>;
 
   private constructor(call: Call, onUserNotify?: (callId: string) => Promise<void>, language = 'en') {
@@ -215,49 +212,6 @@ export class CallOrchestrator {
     return this.speakerChanged;
   }
 
-  private scheduleNextDecision(): void {
-    if (this.decisionTimer) clearTimeout(this.decisionTimer);
-    this.decisionTimer = setTimeout(() => this.makeDecision(), DECISION_INTERVAL_MS);
-  }
-
-  private async makeDecision(): Promise<void> {
-    const status = this.stateMachine.getStatus();
-    if (status === 'HUMAN_DETECTED' || status === 'BRIDGED' || status === 'ENDED' || status === 'FAILED') return;
-
-    if (this.navigationAttempts >= MAX_NAVIGATION_ATTEMPTS) {
-      await query(`UPDATE calls SET ended_reason = 'max_attempts' WHERE id = $1`, [this.call.id]);
-      await this.stateMachine.transition('end_call', { reason: 'max_attempts_reached' });
-      return;
-    }
-
-    this.navigationAttempts++;
-
-    try {
-      const memories = await getMemoryPatterns(this.call.company, this.call.goal);
-      const context: CallContext = {
-        callId: this.call.id,
-        company: this.call.company,
-        phoneNumber: this.call.phoneNumber,
-        goal: this.call.goal,
-        language: this.language,
-        currentTranscript: this.transcriptionSession.getFullTranscript(),
-        historicalMemory: memories,
-        currentCallState: this.stateMachine.getStatus(),
-        previousActions: this.actionHistory,
-        recentFailures: this.recentFailures,
-        userInfo: this.userInfo,
-      };
-
-      const action = await decideLLMAction(context);
-      await this.executeAction(action);
-    } catch (err) {
-      console.error(`[Orchestrator] Decision error for call ${this.call.id}:`, err);
-      this.recentFailures.push(String(err));
-    }
-
-    this.scheduleNextDecision();
-  }
-
   private async executeAction(action: LLMAction): Promise<void> {
     const callSid = this.call.twilioCallSid;
     if (!callSid) return;
@@ -340,11 +294,6 @@ export class CallOrchestrator {
   private async handleHumanDetected(conferenceName?: string): Promise<void> {
     if (!this.stateMachine.can('human_detected')) return;
 
-    if (this.decisionTimer) {
-      clearTimeout(this.decisionTimer);
-      this.decisionTimer = null;
-    }
-
     await this.stateMachine.transition('human_detected');
     console.log(`[Orchestrator] Human detected for call ${this.call.id}!`);
 
@@ -422,7 +371,6 @@ export class CallOrchestrator {
 
   private async handleCallEnded(humanReached: boolean): Promise<void> {
     this.transcriptionSession.stop();
-    if (this.decisionTimer) clearTimeout(this.decisionTimer);
 
     const callRow = await queryOne<{ wait_duration_seconds: number }>(
       `SELECT wait_duration_seconds FROM calls WHERE id = $1`,
