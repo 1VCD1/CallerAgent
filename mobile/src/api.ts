@@ -35,7 +35,7 @@ export interface Call {
   transcripts?: Transcript[];
 }
 
-const DEFAULT_API_URL = 'https://keep-disturbed-limited-endless.trycloudflare.com';
+const DEFAULT_API_URL = 'https://calleragent-production.up.railway.app';
 
 async function getHeaders(): Promise<Record<string, string>> {
   const token = await getIdToken();
