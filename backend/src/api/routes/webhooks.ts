@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import * as https from 'https';
 import { activeOrchestrators } from './calls';
 import { query } from '../../db/client';
-import { getMemoryPatterns } from '../../services/memory';
+import { getMemoryPatterns, getActionPatterns } from '../../services/memory';
 import { decideLLMAction } from '../../services/llm-engine';
 import { config } from '../../config';
 import { CallContext, ActionRecord, CallStatus } from '../../types';
@@ -140,6 +140,9 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
     if (ivrNotesCached === undefined) fetchPromises.push(getCompanyIvrNotes(company).then(n => { companyIvrNotes = n; if (orchestrator) orchestrator.setCachedIvrNotes(n); }));
     else companyIvrNotes = ivrNotesCached;
 
+    // Action patterns fetched fresh each turn (cheap aggregate query, changes across calls)
+    const actionPatterns = await getActionPatterns(company);
+
     if (fetchPromises.length > 0) await Promise.all(fetchPromises);
     companyIvrNotes = companyIvrNotes! ?? ivrNotesCached ?? null;
 
@@ -229,6 +232,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       consecutiveWaits,
       consecutiveSameKey,
       audioAnalysis: orchestrator?.getAudioAnalysis() ?? null,
+      actionPatterns: actionPatterns.length > 0 ? actionPatterns : undefined,
     };
 
     let twiml: string;

@@ -124,6 +124,39 @@ export async function recordCallOutcome(params: {
   }
 }
 
+export interface ActionPattern {
+  action: string;
+  value: string | null;
+  total: number;
+  successPct: number;
+}
+
+export async function getActionPatterns(company: string): Promise<ActionPattern[]> {
+  const rows = await query<{
+    action: string; value: string | null;
+    total: string; success_pct: string;
+  }>(
+    `SELECT ah.action, ah.value,
+            COUNT(*) AS total,
+            ROUND(AVG(CASE WHEN ah.success THEN 1 ELSE 0 END) * 100) AS success_pct
+     FROM action_history ah
+     JOIN calls c ON c.id = ah.call_id
+     WHERE LOWER(c.company) = LOWER($1)
+     GROUP BY ah.action, ah.value
+     HAVING COUNT(*) >= 2
+     ORDER BY total DESC
+     LIMIT 15`,
+    [company]
+  );
+
+  return rows.map(r => ({
+    action: r.action,
+    value: r.value,
+    total: parseInt(r.total, 10),
+    successPct: parseInt(r.success_pct, 10),
+  }));
+}
+
 export async function markActionSuccess(
   callId: string,
   action: string,

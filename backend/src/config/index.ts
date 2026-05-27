@@ -38,6 +38,10 @@ export const config = {
     apiKey: process.env.OPENAI_API_KEY ?? null, // optional — used for memory embeddings only
   },
 
+  firebase: {
+    serviceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? null, // optional — used for FCM push
+  },
+
   app: {
     baseUrl: process.env.APP_BASE_URL ?? 'http://localhost:3000',
     webhookBaseUrl: process.env.WEBHOOK_BASE_URL ?? 'http://localhost:3000/webhooks',

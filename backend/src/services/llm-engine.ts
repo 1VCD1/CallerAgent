@@ -128,6 +128,17 @@ ${ctx.userInfo.birthday ? `  Date of birth: ${ctx.userInfo.birthday}` : ''}`.tri
     ? `\n📋 PRIOR CALL NOTES FOR ${ctx.company.toUpperCase()} (learn from these):\n${ctx.companyIvrNotes}`
     : '';
 
+  const patternBlock = ctx.actionPatterns && ctx.actionPatterns.length > 0
+    ? (() => {
+        const bad  = ctx.actionPatterns!.filter(p => p.successPct < 40 && p.total >= 3);
+        const good = ctx.actionPatterns!.filter(p => p.successPct >= 70 && p.total >= 3);
+        const lines: string[] = [];
+        if (good.length > 0) lines.push(`  ✅ Works well: ${good.map(p => `${p.action}(${p.value ?? ''}) ${p.successPct}% of ${p.total}`).join(' | ')}`);
+        if (bad.length > 0)  lines.push(`  ❌ Avoid: ${bad.map(p => `${p.action}(${p.value ?? ''}) only ${p.successPct}% of ${p.total}`).join(' | ')}`);
+        return lines.length > 0 ? `\n📊 ACTION PATTERNS FOR ${ctx.company.toUpperCase()} (across all past calls):\n${lines.join('\n')}` : '';
+      })()
+    : '';
+
   const audioBlock = ctx.audioAnalysis && ctx.audioAnalysis.framesAnalyzed >= 10
     ? (() => {
         const a = ctx.audioAnalysis!;
@@ -155,6 +166,7 @@ ${waitWarning}
 ${sameKeyWarning}
 ${explorationBlock}
 ${ivrNotesBlock}
+${patternBlock}
 ${audioBlock}
 ${utteranceBlock}
 

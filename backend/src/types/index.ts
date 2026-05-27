@@ -51,6 +51,7 @@ export interface CallContext {
   currentIvrUtterance?: string;       // what the IVR said just now (this turn only)
   consecutiveWaits?: number;          // how many consecutive wait actions taken so far
   consecutiveSameKey?: { key: string; count: number }; // same DTMF key pressed N times in a row
+  actionPatterns?: Array<{ action: string; value: string | null; total: number; successPct: number }>;
   audioAnalysis?: {
     isHuman: boolean;
     confidence: number;
