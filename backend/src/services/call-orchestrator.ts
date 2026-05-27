@@ -271,7 +271,7 @@ export class CallOrchestrator {
           break;
 
         case 'say_phrase':
-          if (action.value) await sayPhrase(callSid, action.value);
+          if (action.value) await sayPhrase(callSid, action.value, getLang(this.language).ttsVoice);
           break;
 
         case 'wait':
@@ -320,7 +320,8 @@ export class CallOrchestrator {
     if (status === 'USER_NOTIFIED' && conferenceName && this.call.userPhoneNumber) {
       console.log(`[Orchestrator] State already USER_NOTIFIED — attempting late bridge for ${this.call.id}`);
       try {
-        const userCallSid = await bridgeUserToConference(this.call.userPhoneNumber, conferenceName);
+        const lateLang = getLang(this.language);
+        const userCallSid = await bridgeUserToConference(this.call.userPhoneNumber, conferenceName, lateLang.userBridgeMessage, lateLang.ttsVoice);
         await query(
           `UPDATE calls SET user_call_sid = $1, conference_sid = $2, status = 'BRIDGED' WHERE id = $3`,
           [userCallSid, conferenceName, this.call.id]
@@ -379,7 +380,8 @@ export class CallOrchestrator {
     // Auto-bridge: call user and drop them into the same conference as the representative
     if (conferenceName && this.call.userPhoneNumber) {
       try {
-        const userCallSid = await bridgeUserToConference(this.call.userPhoneNumber, conferenceName);
+        const autoLang = getLang(this.language);
+        const userCallSid = await bridgeUserToConference(this.call.userPhoneNumber, conferenceName, autoLang.userBridgeMessage, autoLang.ttsVoice);
         await query(
           `UPDATE calls SET user_call_sid = $1, conference_sid = $2, status = 'BRIDGED' WHERE id = $3`,
           [userCallSid, conferenceName, this.call.id]
@@ -406,7 +408,8 @@ export class CallOrchestrator {
     await createConferenceBridge(callSid, conferenceName);
 
     const { bridgeUserToConference } = await import('./telephony');
-    const userCallSid = await bridgeUserToConference(userPhoneNumber, conferenceName);
+    const manualLang = getLang(this.language);
+    const userCallSid = await bridgeUserToConference(userPhoneNumber, conferenceName, manualLang.userBridgeMessage, manualLang.ttsVoice);
 
     await query(
       `UPDATE calls SET user_call_sid = $1, conference_sid = $2 WHERE id = $3`,

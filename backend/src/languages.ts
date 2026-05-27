@@ -6,6 +6,7 @@ export interface LangConfig {
   ttsVoice: string;           // Twilio TTS voice
   systemPrompt: string;       // LLM system prompt
   humanBridgeMessage: string; // Spoken to representative when human detected
+  userBridgeMessage: string;  // Spoken to user when they are called to join the conference
 }
 
 const EN_SYSTEM_PROMPT = `You are an AI agent making a phone call on behalf of a user. You navigate IVR systems and answer questions using the user's information to reach a live human agent.
@@ -157,6 +158,7 @@ export const LANGUAGES: Record<Lang, LangConfig> = {
     ttsVoice: 'alice',
     systemPrompt: EN_SYSTEM_PROMPT,
     humanBridgeMessage: 'A live representative has been detected. Please hold while we connect you.',
+    userBridgeMessage: "You're being connected to a live representative.",
   },
   'zh-TW': {
     label: '繁體中文',
@@ -164,6 +166,7 @@ export const LANGUAGES: Record<Lang, LangConfig> = {
     ttsVoice: 'Google.cmn-TW-Neural2-A',
     systemPrompt: ZH_SYSTEM_PROMPT,
     humanBridgeMessage: '已偵測到真人客服，請稍候，正在為您連線。',
+    userBridgeMessage: '已接通真人客服，正在為您轉接。',
   },
   'zh-CN': {
     label: '简体中文',
@@ -171,6 +174,7 @@ export const LANGUAGES: Record<Lang, LangConfig> = {
     ttsVoice: 'Google.cmn-CN-Neural2-A',
     systemPrompt: ZH_SYSTEM_PROMPT,
     humanBridgeMessage: '已检测到真人客服，请稍候，正在为您接通。',
+    userBridgeMessage: '已接通真人客服，正在为您转接。',
   },
 };
 

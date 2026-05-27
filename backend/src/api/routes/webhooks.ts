@@ -274,8 +274,23 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       twiml = buildActionTwiML(safeAction, safeValue, gatherUrl, langConfig.ttsVoice);
     } catch (err) {
       console.error('[Gather] LLM error:', err);
-      const gatherUrl = `${config.app.webhookBaseUrl}/twilio/gather?callId=${callId}`;
-      twiml = buildGatherTwiML(gatherUrl);
+      const retries = parseInt((query_params.retries ?? '0'), 10);
+      if (retries >= 2) {
+        // 3 consecutive LLM failures — end the call rather than loop forever
+        await query(
+          `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'llm_error' WHERE id = $1`,
+          [callId]
+        );
+        activeOrchestrators.delete(callId);
+        twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="${langConfig.ttsVoice}">Sorry, we encountered a technical issue. Please try again later.</Say>
+  <Hangup/>
+</Response>`;
+      } else {
+        const gatherUrl = `${config.app.webhookBaseUrl}/twilio/gather?callId=${callId}&retries=${retries + 1}`;
+        twiml = buildGatherTwiML(gatherUrl);
+      }
     }
 
     reply.type('text/xml').send(twiml);
@@ -303,7 +318,7 @@ function buildActionTwiML(action: string, value: string | undefined, gatherUrl: 
     case 'escalate_to_user':
       return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">I was unable to reach a representative automatically. Please try calling manually.</Say>
+  <Say voice="${voice}">I was unable to reach a representative automatically. Please try calling manually.</Say>
   <Hangup/>
 </Response>`;
     default:

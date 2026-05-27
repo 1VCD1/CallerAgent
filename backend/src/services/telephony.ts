@@ -51,11 +51,11 @@ export async function sendDTMF(callSid: string, digits: string): Promise<void> {
   });
 }
 
-export async function sayPhrase(callSid: string, phrase: string): Promise<void> {
+export async function sayPhrase(callSid: string, phrase: string, voice = 'alice'): Promise<void> {
   await client.calls(callSid).update({
     twiml: `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">${phrase}</Say>
+  <Say voice="${voice}">${phrase}</Say>
   <Pause length="2"/>
 </Response>`,
   });
@@ -95,14 +95,16 @@ export async function createConferenceWithHold(
 
 export async function bridgeUserToConference(
   userPhoneNumber: string,
-  conferenceName: string
+  conferenceName: string,
+  message = "You're being connected to a live representative.",
+  voice = 'alice'
 ): Promise<string> {
   const call = await client.calls.create({
     to: userPhoneNumber,
     from: config.twilio.phoneNumber,
     twiml: `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">You're being connected to a live representative.</Say>
+  <Say voice="${voice}">${message}</Say>
   <Dial>
     <Conference>${conferenceName}</Conference>
   </Dial>
