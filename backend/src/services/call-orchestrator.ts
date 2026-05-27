@@ -5,7 +5,7 @@ import { decideLLMAction } from './llm-engine';
 import { getMemoryPatterns, recordCallOutcome, markActionSuccess } from './memory';
 import { generateCallSummary } from './call-summarizer';
 import { initiateOutboundCall, sendDTMF, sayPhrase, createConferenceBridge, createConferenceWithHold, bridgeUserToConference, endCall } from './telephony';
-import { detectHuman, isHoldMusic } from './human-detector';
+import { detectHumanCombined, isHoldMusic } from './human-detector';
 import { AudioAnalyzer, AudioAnalysisResult } from './audio-analyzer';
 import { query, queryOne } from '../db/client';
 import { config } from '../config';
@@ -129,7 +129,7 @@ export class CallOrchestrator {
       console.log(`[Orchestrator] Speaker change detected for call ${this.call.id} — will pass to LLM`);
     }
 
-    const detection = detectHuman(text);
+    const detection = detectHumanCombined(text, this.audioAnalyzer.analyze());
     if (
       detection.isHuman &&
       detection.confidence >= HUMAN_CONFIDENCE_THRESHOLD &&

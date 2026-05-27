@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
 import { getUserId, getCalls, endCall } from '@/api';
-import type { Call } from '@/api';
+import { useCallStore } from '@/store';
 
 function timeAgo(d: string) {
   const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
@@ -18,19 +18,19 @@ function timeAgo(d: string) {
 
 export default function HistoryScreen() {
   const router = useRouter();
-  const [calls, setCalls]         = useState<Call[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const { callHistory, setCallHistory } = useCallStore();
 
   const load = useCallback(async () => {
     try {
       const uid = await getUserId();
-      if (uid) setCalls(await getCalls(uid, 30));
+      if (uid) setCallHistory(await getCalls(uid, 30));
     } catch {}
-  }, []);
+  }, [setCallHistory]);
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 3000);
+    const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [load]);
 
@@ -40,10 +40,10 @@ export default function HistoryScreen() {
     <SafeAreaView style={s.safe}>
       <View style={s.header}>
         <Text style={s.title}>History</Text>
-        <Text style={s.count}>{calls.length} calls</Text>
+        <Text style={s.count}>{callHistory.length} calls</Text>
       </View>
       <FlatList
-        data={calls}
+        data={callHistory}
         keyExtractor={c => c.id}
         contentContainerStyle={s.list}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.blue} />}

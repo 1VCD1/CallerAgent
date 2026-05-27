@@ -6,8 +6,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
-import { getUserId, setUserId, createUser, startCall, getCalls, getCall, endCall } from '@/api';
+import { getUserId, setUserId, createUser, startCall, getCalls, getCall, endCall, getApiUrl } from '@/api';
+import { useCallStore } from '@/store';
+import { useSSE } from '@/hooks/useSSE';
 import type { Call } from '@/api';
+
+const TERMINAL = new Set(['ENDED', 'FAILED']);
 
 interface CallTemplate {
   company: string;
@@ -22,23 +26,43 @@ export default function CallScreen() {
   const [goal, setGoal]         = useState('');
   const [ivrLang, setIvrLang]   = useState<'en' | 'zh-TW' | 'zh-CN'>('en');
   const [loading, setLoading]   = useState(false);
-  const [active, setActive]     = useState<Call[]>([]);
   const [templates, setTemplates] = useState<CallTemplate[]>([]);
-  const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const [sseUrl, setSseUrl]     = useState<string | null>(null);
   const submitting = useRef(false);
 
-  const ensureUser = async () => {
-    let uid = await getUserId();
-    if (!uid) { const u = await createUser(); uid = u.id; await setUserId(uid); }
-    return uid;
-  };
+  const { activeCall, setActiveCall, setCallHistory, patchCall } = useCallStore();
+
+  // SSE: instant status updates (replaces the 1s status poll)
+  useSSE(sseUrl, (event, data: any) => {
+    if (event === 'status' && data?.callId && data?.status) {
+      patchCall(data.callId, { status: data.status });
+      if (TERMINAL.has(data.status)) setSseUrl(null);
+    }
+  });
+
+  // Connect SSE whenever there's a non-terminal active call
+  useEffect(() => {
+    if (!activeCall?.id || TERMINAL.has(activeCall.status)) {
+      setSseUrl(null);
+      return;
+    }
+    getApiUrl().then(base => setSseUrl(`${base}/calls/${activeCall.id}/events`));
+  }, [activeCall?.id, activeCall?.status]);
+
+  // Poll full call details every 4s for transcript updates
+  useEffect(() => {
+    if (!activeCall?.id || TERMINAL.has(activeCall.status)) return;
+    const t = setInterval(() => {
+      getCall(activeCall.id).then(setActiveCall).catch(() => {});
+    }, 4000);
+    return () => clearInterval(t);
+  }, [activeCall?.id, activeCall?.status]);
 
   const loadTemplates = async () => {
     try {
       const uid = await getUserId();
       if (!uid) return;
       const calls = await getCalls(uid, 50);
-      // Deduplicate by company+phone, keep most recent goal per combo
       const seen = new Map<string, CallTemplate>();
       for (const c of calls) {
         const key = `${c.company}||${c.phone_number}`;
@@ -60,19 +84,20 @@ export default function CallScreen() {
       const uid = await getUserId();
       if (!uid) return;
       const calls = await getCalls(uid, 5);
+      setCallHistory(calls);
       const activeCalls = calls.filter((c: Call) => ACTIVE_STATUSES.includes(c.status));
-      const detailed = await Promise.all(
-        activeCalls.map(c => getCall(c.id).catch(() => c))
-      );
-      setActive(detailed);
+      if (activeCalls.length > 0) {
+        const full = await getCall(activeCalls[0].id).catch(() => activeCalls[0]);
+        setActiveCall(full);
+      } else {
+        setActiveCall(null);
+      }
     } catch {}
   };
 
   useEffect(() => {
     refresh();
     loadTemplates();
-    timer.current = setInterval(refresh, 1000);
-    return () => clearInterval(timer.current as any);
   }, []);
 
   const handleStart = async () => {
@@ -84,10 +109,12 @@ export default function CallScreen() {
     submitting.current = true;
     setLoading(true);
     try {
-      const uid = await ensureUser();
+      let uid = await getUserId();
+      if (!uid) { const u = await createUser(); uid = u.id; await setUserId(uid); }
       await startCall(uid, { company: company.trim(), phoneNumber: phone.trim(), goal: goal.trim() || undefined, ivrLanguage: ivrLang });
       setCompany(''); setPhone(''); setGoal('');
-      await Promise.all([refresh(), loadTemplates()]);
+      await refresh();
+      await loadTemplates();
     } catch (e: any) {
       Alert.alert('Error', e.message ?? 'Failed to start call');
     } finally {
@@ -97,8 +124,8 @@ export default function CallScreen() {
   };
 
   // Full-screen active call view
-  if (active.length > 0) {
-    const call = active[0];
+  if (activeCall) {
+    const call = activeCall;
     const cfg = STATUS[call.status] ?? STATUS['ENDED'];
     const isHuman = ['HUMAN_DETECTED', 'USER_NOTIFIED', 'BRIDGED'].includes(call.status);
     const confidence = call.human_confidence ?? 0;
@@ -141,7 +168,7 @@ export default function CallScreen() {
           </View>
         )}
 
-        {/* Transcript — full screen, large text */}
+        {/* Transcript */}
         <ScrollView
           style={s.callTranscript}
           contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
@@ -268,27 +295,6 @@ const s = StyleSheet.create({
   logo:            { width: 34, height: 34, borderRadius: 8, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
   logoTxt:         { color: '#fff', fontWeight: '700', fontSize: 13 },
   heading:         { fontSize: 20, fontWeight: '700', color: colors.text },
-  activeCard:      { backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 12 },
-  humanBanner:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#052e16', padding: 8, borderRadius: 8, marginBottom: 10 },
-  humanBannerTxt:  { color: colors.green, fontWeight: '600', fontSize: 12 },
-  row:             { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  activeCompany:   { fontSize: 15, fontWeight: '600', color: colors.text },
-  activePhone:     { fontSize: 12, color: colors.subtext, marginTop: 2 },
-  badge:           { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
-  badgeTxt:        { fontSize: 11, fontWeight: '600' },
-  confRow:         { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  confLabel:       { fontSize: 11, color: colors.muted },
-  confPct:         { fontSize: 11, fontWeight: '700', color: colors.subtext },
-  confTrack:       { height: 4, backgroundColor: colors.border, borderRadius: 2, marginBottom: 10, overflow: 'hidden' },
-  confFill:        { height: 4, borderRadius: 2 },
-  transcript:      { backgroundColor: '#0f172a', borderRadius: 8, padding: 10, marginBottom: 10, gap: 6 },
-  transcriptRow:   { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
-  transcriptLine:  { fontSize: 12, color: colors.subtext, lineHeight: 17 },
-  transcriptSpeaker:{ fontWeight: '700', color: colors.muted },
-  confBadge:       { borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, minWidth: 36, alignItems: 'center' },
-  confBadgeTxt:    { fontSize: 10, fontWeight: '700' },
-  endBtn:          { borderWidth: 1, borderColor: '#7f1d1d', borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
-  endBtnTxt:       { color: colors.red, fontSize: 13, fontWeight: '600' },
   card:            { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 12 },
   cardTitle:       { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 14 },
   label:           { fontSize: 11, fontWeight: '700', color: colors.subtext, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
