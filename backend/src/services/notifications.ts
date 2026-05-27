@@ -1,23 +1,12 @@
-import * as admin from 'firebase-admin';
-import { config } from '../config';
+import { getFirebaseAdmin, isFirebaseReady } from './firebase-admin';
+
+// Ensure Firebase is initialized (idempotent)
+getFirebaseAdmin();
 
 export interface PushPayload {
   title: string;
   body: string;
   data?: Record<string, string>;
-}
-
-// Initialize Firebase Admin once if service account is configured
-let firebaseReady = false;
-if (config.firebase.serviceAccountJson) {
-  try {
-    const serviceAccount = JSON.parse(config.firebase.serviceAccountJson);
-    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-    firebaseReady = true;
-    console.log('[Notifications] Firebase Admin initialized');
-  } catch (err) {
-    console.error('[Notifications] Firebase Admin init failed — FCM disabled:', err);
-  }
 }
 
 export async function sendPushNotification(token: string, payload: PushPayload): Promise<void> {
@@ -61,11 +50,12 @@ async function sendExpoNotification(token: string, payload: PushPayload): Promis
 }
 
 async function sendFcmNotification(token: string, payload: PushPayload): Promise<void> {
-  if (!firebaseReady) {
+  if (!isFirebaseReady()) {
     console.warn('[Notifications] FCM token received but Firebase not configured — push skipped');
     return;
   }
 
+  const admin = getFirebaseAdmin();
   await admin.messaging().send({
     token,
     notification: {

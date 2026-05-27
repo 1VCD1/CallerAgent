@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
-import { getUserId, setUserId, createUser, getUser, startCall, getCalls, getCall, endCall, getApiUrl } from '@/api';
+import { startCall, getCalls, getCall, endCall, getApiUrl } from '@/api';
 import { useCallStore } from '@/store';
 import { useSSE } from '@/hooks/useSSE';
 import type { Call } from '@/api';
@@ -60,9 +60,7 @@ export default function CallScreen() {
 
   const loadTemplates = async () => {
     try {
-      const uid = await getUserId();
-      if (!uid) return;
-      const calls = await getCalls(uid, 50);
+      const calls = await getCalls(50);
       const seen = new Map<string, CallTemplate>();
       for (const c of calls) {
         const key = `${c.company}||${c.phone_number}`;
@@ -81,9 +79,7 @@ export default function CallScreen() {
 
   const refresh = async () => {
     try {
-      const uid = await getUserId();
-      if (!uid) return;
-      const calls = await getCalls(uid, 5);
+      const calls = await getCalls(5);
       setCallHistory(calls);
       const activeCalls = calls.filter((c: Call) => ACTIVE_STATUSES.includes(c.status));
       if (activeCalls.length > 0) {
@@ -98,15 +94,6 @@ export default function CallScreen() {
   useEffect(() => {
     refresh();
     loadTemplates();
-    // Pre-select the IVR language from the user's profile preference
-    getUserId().then(uid => {
-      if (!uid) return;
-      getUser(uid).then(u => {
-        if (u.language && ['en', 'zh-TW', 'zh-CN'].includes(u.language)) {
-          setIvrLang(u.language as 'en' | 'zh-TW' | 'zh-CN');
-        }
-      }).catch(() => {});
-    });
   }, []);
 
   const handleStart = async () => {
@@ -118,9 +105,7 @@ export default function CallScreen() {
     submitting.current = true;
     setLoading(true);
     try {
-      let uid = await getUserId();
-      if (!uid) { const u = await createUser(); uid = u.id; await setUserId(uid); }
-      await startCall(uid, { company: company.trim(), phoneNumber: phone.trim(), goal: goal.trim() || undefined, ivrLanguage: ivrLang });
+      await startCall({ company: company.trim(), phoneNumber: phone.trim(), goal: goal.trim() || undefined, ivrLanguage: ivrLang });
       setCompany(''); setPhone(''); setGoal('');
       await refresh();
       await loadTemplates();

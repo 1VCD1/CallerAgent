@@ -5,7 +5,7 @@ interface CallStore {
   userId: string | null;
   activeCall: Call | null;
   callHistory: Call[];
-  setUserId: (id: string) => void;
+  setUserId: (id: string | null) => void;
   setActiveCall: (call: Call | null) => void;
   setCallHistory: (calls: Call[]) => void;
   patchCall: (callId: string, patch: Partial<Call>) => void;
@@ -15,7 +15,7 @@ export const useCallStore = create<CallStore>((set) => ({
   userId: null,
   activeCall: null,
   callHistory: [],
-  setUserId: (id) => set({ userId: id }),
+  setUserId: (id) => set({ userId: id ?? null }),
   setActiveCall: (call) => set({ activeCall: call }),
   setCallHistory: (calls) => set({ callHistory: calls }),
   patchCall: (callId, patch) =>

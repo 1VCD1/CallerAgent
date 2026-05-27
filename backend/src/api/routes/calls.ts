@@ -7,6 +7,7 @@ import { sendPushNotification } from '../../services/notifications';
 import { sendSMS } from '../../services/telephony';
 import { callEvents, emitCallStatus } from '../../services/call-events';
 import { config } from '../../config';
+import { requireAuth } from '../middleware/auth';
 
 // Simple in-memory rate limiter: max 5 POST /calls per IP per minute
 const callRateLimiter = new Map<string, { count: number; resetAt: number }>();
@@ -41,8 +42,8 @@ const createCallSchema = z.object({
   phoneNumber: z.string().regex(/^\+?[1-9]\d{7,14}$/),
   userPhoneNumber: z.string().regex(/^\+?[1-9]\d{7,14}$/).optional(),
   goal: z.string().optional(),
-  userId: z.string().uuid(),
-  ivrLanguage: z.enum(['en', 'zh-TW', 'zh-CN']).optional(), // language of the IVR being called
+  userId: z.string().uuid().optional(), // optional when auth token provides it
+  ivrLanguage: z.enum(['en', 'zh-TW', 'zh-CN']).optional(),
 });
 
 const updateUserSchema = z.object({
@@ -109,8 +110,12 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /calls — create and start a new AI call
-  fastify.post('/calls', { preHandler: requireApiKey }, async (request, reply) => {
+  fastify.post('/calls', { preHandler: requireAuth }, async (request, reply) => {
     const body = createCallSchema.parse(request.body);
+
+    // userId from auth token takes precedence over body
+    const userId = (request as any).userId ?? body.userId;
+    if (!userId) return reply.status(401).send({ error: 'Not authenticated' });
 
     // Rate limit: max 5 new calls per IP per minute
     const ip = request.ip ?? '0.0.0.0';
@@ -121,7 +126,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
     // Guard: reject if user already has an active call
     const activeCall = await queryOne<{ id: string }>(
       `SELECT id FROM calls WHERE user_id = $1 AND status NOT IN ('ENDED','FAILED') LIMIT 1`,
-      [body.userId]
+      [userId]
     );
     if (activeCall) {
       return reply.status(409).send({ error: 'You already have an active call in progress.', callId: activeCall.id });
@@ -130,7 +135,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
     // Resolve user profile for callback number, language, and AI context
     const user = await queryOne<{ phone_number: string; name: string; birthday: string; language: string }>(
       `SELECT phone_number, name, birthday, language FROM users WHERE id = $1`,
-      [body.userId]
+      [userId]
     );
     const userPhoneNumber = body.userPhoneNumber ?? user?.phone_number ?? undefined;
 
@@ -141,7 +146,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
       userInfo: { name: user?.name ?? undefined, birthday: user?.birthday ?? undefined },
       language: body.ivrLanguage ?? user?.language ?? 'en',
       goal: body.goal,
-      userId: body.userId,
+      userId,
       onUserNotify: async (callId) => {
         // SMS: fires immediately so user knows to answer the incoming Twilio call
         if (userPhoneNumber) {
@@ -154,7 +159,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
         // Push notification for when mobile app is ready
         const user = await queryOne<{ push_token: string }>(
           `SELECT push_token FROM users WHERE id = $1`,
-          [body.userId]
+          [userId]
         );
         if (user?.push_token) {
           await sendPushNotification(user.push_token, {
@@ -193,10 +198,13 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /calls — list calls for a user
-  fastify.get<{ Querystring: { userId: string; limit?: string } }>(
+  fastify.get<{ Querystring: { userId?: string; limit?: string } }>(
     '/calls',
+    { preHandler: requireAuth },
     async (request, reply) => {
-      const { userId, limit = '20' } = request.query;
+      const { userId: queryUserId, limit = '20' } = request.query;
+      const userId = (request as any).userId ?? queryUserId;
+      if (!userId) return reply.status(401).send({ error: 'Not authenticated' });
       const calls = await query(
         `SELECT * FROM calls WHERE user_id = $1 ORDER BY started_at DESC LIMIT $2`,
         [userId, parseInt(limit, 10)]

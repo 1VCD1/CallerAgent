@@ -15,7 +15,9 @@ if (config.app.sentryDsn) {
 import callsPlugin from './api/routes/calls';
 import webhooksPlugin, { registerRecordingRoutes } from './api/routes/webhooks';
 import analyticsPlugin from './api/routes/analytics';
+import authPlugin from './api/routes/auth';
 import { activeOrchestrators } from './api/routes/calls';
+import { getFirebaseAdmin } from './services/firebase-admin';
 
 // Registry of browser monitor clients: callId → set of WebSocket connections
 export const monitorSockets = new Map<string, Set<WebSocket>>();
@@ -112,6 +114,9 @@ async function cleanupStaleCalls() {
 }
 
 async function bootstrap() {
+  // Initialize Firebase Admin early so auth middleware is ready
+  getFirebaseAdmin();
+
   await cleanupStaleCalls();
 
   await fastify.register(cors, {
@@ -203,6 +208,7 @@ async function bootstrap() {
     prefix: '/',
   });
 
+  await fastify.register(authPlugin);
   await fastify.register(callsPlugin);
   await fastify.register(webhooksPlugin);
   await fastify.register(analyticsPlugin);

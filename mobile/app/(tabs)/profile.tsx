@@ -3,10 +3,14 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert,
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/theme';
-import { getUserId, setUserId, createUser, getUser, updateUser, getApiUrl, setApiUrl, getApiKey, setApiKey, getIvrNotes, IvrNote } from '@/api';
+import { getUser, updateUser, getApiUrl, setApiUrl, getApiKey, setApiKey, getIvrNotes, IvrNote } from '@/api';
+import { useCallStore } from '@/store';
+import { auth, signOut } from '@/firebase';
 
 export default function ProfileScreen() {
-  const [userId, setLocalUserId] = useState<string | null>(null);
+  const { userId } = useCallStore();
+  const firebaseUser = auth.currentUser;
+
   const [name, setName]       = useState('');
   const [phone, setPhone]     = useState('');
   const [birthday, setBirthday] = useState('');
@@ -21,42 +25,36 @@ export default function ProfileScreen() {
   const [noteError, setNoteError] = useState('');
 
   useEffect(() => {
-    (async () => {
-      setLocalApiUrl(await getApiUrl());
-      setLocalApiKey(await getApiKey());
-      try {
-        let uid = await getUserId();
-        if (!uid) { const u = await createUser(); uid = u.id; await setUserId(uid); }
-        setLocalUserId(uid);
-        const u = await getUser(uid);
-        if (u.name)         setName(u.name);
-        if (u.phone_number) setPhone(u.phone_number);
-        if (u.birthday)     setBirthday(u.birthday.slice(0, 10));
-        if (u.email)        setEmail(u.email);
-      } catch {}
-    })();
+    getApiUrl().then(setLocalApiUrl);
+    getApiKey().then(setLocalApiKey);
   }, []);
 
+  useEffect(() => {
+    if (!userId) return;
+    getUser(userId).then(u => {
+      if (u.name)         setName(u.name);
+      if (u.phone_number) setPhone(u.phone_number);
+      if (u.birthday)     setBirthday(u.birthday.slice(0, 10));
+      if (u.email)        setEmail(u.email);
+    }).catch(() => {});
+  }, [userId]);
+
   const save = async () => {
+    if (!userId) {
+      Alert.alert('Not signed in', 'Please sign in first.');
+      return;
+    }
     setSaving(true);
     try {
       await setApiUrl(apiUrl.trim() || 'http://localhost:3000');
       await setApiKey(apiKey.trim());
-
-      let uid = userId;
-      if (!uid) {
-        const u = await createUser();
-        uid = u.id;
-        await setUserId(uid);
-        setLocalUserId(uid);
-      }
 
       const data: Record<string, string> = {};
       if (name.trim())     data.name = name.trim();
       if (phone.trim())    data.phoneNumber = phone.trim();
       if (birthday.trim()) data.birthday = birthday.trim();
       if (email.trim())    data.email = email.trim();
-      if (Object.keys(data).length) await updateUser(uid, data);
+      if (Object.keys(data).length) await updateUser(userId, data);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e: any) {
@@ -66,12 +64,41 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleSignOut = () => {
+    Alert.alert('Sign out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: () => signOut().catch(console.warn) },
+    ]);
+  };
+
   return (
     <SafeAreaView style={s.safe}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={s.title}>Profile</Text>
-        {userId && <Text style={s.uid}>ID: {userId.slice(0, 8)}…</Text>}
+        <View style={s.titleRow}>
+          <Text style={s.title}>Profile</Text>
+          <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut}>
+            <Ionicons name="log-out-outline" size={18} color={colors.red} />
+            <Text style={s.signOutTxt}>Sign out</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Signed-in user info */}
+        {firebaseUser && (
+          <View style={s.accountCard}>
+            <View style={s.avatar}>
+              <Text style={s.avatarTxt}>
+                {(firebaseUser.displayName ?? firebaseUser.email ?? '?')[0].toUpperCase()}
+              </Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              {firebaseUser.displayName ? (
+                <Text style={s.accountName}>{firebaseUser.displayName}</Text>
+              ) : null}
+              <Text style={s.accountEmail}>{firebaseUser.email}</Text>
+            </View>
+          </View>
+        )}
 
         <View style={s.card}>
           <Text style={s.cardTitle}>Personal Info</Text>
@@ -87,10 +114,10 @@ export default function ProfileScreen() {
 
         <View style={s.card}>
           <Text style={s.cardTitle}>Backend</Text>
-          <Text style={s.hint}>Set this to your ngrok URL or local IP when running on a physical device</Text>
-          <F label="API URL" placeholder="https://xxxx.ngrok-free.dev" value={apiUrl}
+          <Text style={s.hint}>Change the API URL if you are running a local backend</Text>
+          <F label="API URL" placeholder="https://your-app.railway.app" value={apiUrl}
             onChangeText={setLocalApiUrl} autoCapitalize="none" keyboardType="url" />
-          <F label="API Key" placeholder="Leave empty if auth is disabled" value={apiKey}
+          <F label="API Key" placeholder="Admin bypass only — leave empty for normal use" value={apiKey}
             onChangeText={setLocalApiKey} autoCapitalize="none" secureTextEntry />
           <TouchableOpacity style={s.testBtn} onPress={async () => {
             const url = apiUrl.trim();
@@ -165,7 +192,6 @@ export default function ProfileScreen() {
                 .filter(l => l.trim().startsWith('-'))
                 .map((line, i) => {
                   const content = line.replace(/^[\s-]+/, '');
-                  // split on **...** to extract bold segments
                   const parts = content.split(/\*\*(.*?)\*\*/g);
                   return (
                     <View key={i} style={s.noteBullet}>
@@ -203,8 +229,15 @@ function F({ label, hint, ...p }: { label: string; hint?: string } & React.Compo
 const s = StyleSheet.create({
   safe:       { flex: 1, backgroundColor: colors.bg },
   scroll:     { padding: 16, paddingBottom: 120 },
-  title:      { fontSize: 24, fontWeight: '700', color: colors.text, marginBottom: 2 },
-  uid:        { fontSize: 12, color: colors.muted, marginBottom: 20 },
+  titleRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  title:      { fontSize: 24, fontWeight: '700', color: colors.text },
+  signOutBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  signOutTxt: { fontSize: 14, fontWeight: '600', color: colors.red },
+  accountCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 14 },
+  avatar:     { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
+  avatarTxt:  { color: '#fff', fontSize: 18, fontWeight: '700' },
+  accountName: { fontSize: 15, fontWeight: '600', color: colors.text },
+  accountEmail: { fontSize: 13, color: colors.subtext },
   card:       { backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 14 },
   cardTitle:  { fontSize: 15, fontWeight: '600', color: colors.text, marginBottom: 4 },
   hint:       { fontSize: 12, color: colors.muted, marginBottom: 14, lineHeight: 17 },

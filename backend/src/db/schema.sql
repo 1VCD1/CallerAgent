@@ -6,6 +6,7 @@ CREATE EXTENSION IF NOT EXISTS "vector";  -- pgvector for embeddings
 -- Users
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  firebase_uid TEXT UNIQUE,
   email TEXT UNIQUE,
   name TEXT,
   phone_number TEXT,
@@ -14,6 +15,9 @@ CREATE TABLE IF NOT EXISTS users (
   push_token TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Add firebase_uid to existing deployments that predate this column
+ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid TEXT UNIQUE;
 
 -- Calls
 CREATE TABLE IF NOT EXISTS calls (

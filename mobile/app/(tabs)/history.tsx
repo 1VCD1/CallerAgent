@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
-import { getUserId, getCalls, endCall } from '@/api';
+import { getCalls, endCall } from '@/api';
 import { useCallStore } from '@/store';
 
 function timeAgo(d: string) {
@@ -23,8 +23,7 @@ export default function HistoryScreen() {
 
   const load = useCallback(async () => {
     try {
-      const uid = await getUserId();
-      if (uid) setCallHistory(await getCalls(uid, 30));
+      setCallHistory(await getCalls(30));
     } catch {}
   }, [setCallHistory]);
 

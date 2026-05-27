@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getIdToken } from '@/firebase';
 
 export interface UserProfile {
   id: string;
@@ -37,6 +38,11 @@ export interface Call {
 const DEFAULT_API_URL = 'https://keep-disturbed-limited-endless.trycloudflare.com';
 
 async function getHeaders(): Promise<Record<string, string>> {
+  const token = await getIdToken();
+  if (token) {
+    return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+  }
+  // fallback: API key for admin/local dev bypass
   const key = await AsyncStorage.getItem('apiKey');
   return {
     'Content-Type': 'application/json',
@@ -66,22 +72,13 @@ export async function setApiKey(key: string): Promise<void> {
   await AsyncStorage.setItem('apiKey', key);
 }
 
-export async function getUserId(): Promise<string | null> {
-  return AsyncStorage.getItem('userId');
-}
-
-export async function setUserId(id: string): Promise<void> {
-  await AsyncStorage.setItem('userId', id);
-}
-
-export async function createUser(): Promise<UserProfile> {
+export async function authLogin(): Promise<UserProfile> {
   const url = await getApiUrl();
-  const res = await fetch(`${url}/users`, {
+  const res = await fetch(`${url}/auth/login`, {
     method: 'POST',
     headers: await getHeaders(),
-    body: JSON.stringify({}),
   });
-  if (!res.ok) throw new Error('Failed to create user');
+  if (!res.ok) throw new Error('Auth failed');
   return res.json();
 }
 
@@ -110,14 +107,13 @@ export async function updateUser(
 }
 
 export async function startCall(
-  userId: string,
   params: { company: string; phoneNumber: string; goal?: string; ivrLanguage?: string }
 ): Promise<{ callId: string; status: string }> {
   const url = await getApiUrl();
   const res = await fetch(`${url}/calls`, {
     method: 'POST',
     headers: await getHeaders(),
-    body: JSON.stringify({ ...params, userId }),
+    body: JSON.stringify(params),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({})) as any;
@@ -126,9 +122,9 @@ export async function startCall(
   return res.json();
 }
 
-export async function getCalls(userId: string, limit = 20): Promise<Call[]> {
+export async function getCalls(limit = 20): Promise<Call[]> {
   const url = await getApiUrl();
-  const res = await fetch(`${url}/calls?userId=${userId}&limit=${limit}`, { headers: await getHeaders() });
+  const res = await fetch(`${url}/calls?limit=${limit}`, { headers: await getHeaders() });
   if (!res.ok) return [];
   return res.json();
 }
