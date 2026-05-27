@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
-import { getUserId, setUserId, createUser, startCall, getCalls, getCall, endCall, getApiUrl } from '@/api';
+import { getUserId, setUserId, createUser, getUser, startCall, getCalls, getCall, endCall, getApiUrl } from '@/api';
 import { useCallStore } from '@/store';
 import { useSSE } from '@/hooks/useSSE';
 import type { Call } from '@/api';
@@ -98,6 +98,15 @@ export default function CallScreen() {
   useEffect(() => {
     refresh();
     loadTemplates();
+    // Pre-select the IVR language from the user's profile preference
+    getUserId().then(uid => {
+      if (!uid) return;
+      getUser(uid).then(u => {
+        if (u.language && ['en', 'zh-TW', 'zh-CN'].includes(u.language)) {
+          setIvrLang(u.language as 'en' | 'zh-TW' | 'zh-CN');
+        }
+      }).catch(() => {});
+    });
   }, []);
 
   const handleStart = async () => {
