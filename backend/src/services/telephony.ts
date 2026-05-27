@@ -9,18 +9,18 @@ export interface OutboundCallOptions {
 }
 
 export async function initiateOutboundCall(options: OutboundCallOptions): Promise<string> {
-  const gatherUrl = `${config.app.webhookBaseUrl}/twilio/gather?callId=${options.callId}`;
+  const gatherUrl = `${config.app.webhookBaseUrl}/webhooks/twilio/gather?callId=${options.callId}`;
   const streamUrl = `wss://${config.app.baseUrl.replace(/^https?:\/\//, '')}/ws/audio/${options.callId}`;
 
   const call = await client.calls.create({
     to: options.to,
     from: config.twilio.phoneNumber,
     twiml: buildStreamingGatherTwiML(gatherUrl, streamUrl),
-    statusCallback: `${config.app.webhookBaseUrl}/twilio/status`,
+    statusCallback: `${config.app.webhookBaseUrl}/webhooks/twilio/status`,
     statusCallbackMethod: 'POST',
     statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
     record: true,
-    recordingStatusCallback: `${config.app.webhookBaseUrl}/twilio/recording`,
+    recordingStatusCallback: `${config.app.webhookBaseUrl}/webhooks/twilio/recording`,
     recordingStatusCallbackMethod: 'POST',
     recordingChannels: 'dual',
   });
@@ -34,7 +34,7 @@ function buildStreamingGatherTwiML(gatherUrl: string, streamUrl: string): string
   <Start>
     <Stream url="${streamUrl}" track="both_tracks"/>
   </Start>
-  <Gather input="speech dtmf" timeout="3" speechTimeout="auto" action="${gatherUrl}" method="POST">
+  <Gather input="speech dtmf" timeout="8" speechTimeout="2" action="${gatherUrl}" method="POST">
     <Pause length="3"/>
   </Gather>
   <Redirect method="POST">${gatherUrl}</Redirect>
@@ -51,11 +51,20 @@ export async function sendDTMF(callSid: string, digits: string): Promise<void> {
   });
 }
 
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 export async function sayPhrase(callSid: string, phrase: string, voice = 'alice'): Promise<void> {
   await client.calls(callSid).update({
     twiml: `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="${voice}">${phrase}</Say>
+  <Say voice="${voice}">${escapeXml(phrase)}</Say>
   <Pause length="2"/>
 </Response>`,
   });
@@ -81,7 +90,7 @@ export async function createConferenceWithHold(
   message?: string,
   voice = 'alice'
 ): Promise<void> {
-  const sayXml = message ? `<Say voice="${voice}">${message}</Say>` : '';
+  const sayXml = message ? `<Say voice="${voice}">${escapeXml(message)}</Say>` : '';
   await client.calls(callSid).update({
     twiml: `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -104,7 +113,7 @@ export async function bridgeUserToConference(
     from: config.twilio.phoneNumber,
     twiml: `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="${voice}">${message}</Say>
+  <Say voice="${voice}">${escapeXml(message)}</Say>
   <Dial>
     <Conference>${conferenceName}</Conference>
   </Dial>

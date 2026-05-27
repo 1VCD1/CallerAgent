@@ -14,6 +14,9 @@ export class DeepgramTranscriptionSession {
   private buffer: string = '';
   private lastSpeaker: number | null = null;
   private language: string;
+  private stopped = false;
+  private reconnectAttempt = 0;
+  private static readonly MAX_RECONNECTS = 3;
 
   constructor(callId: string, onTranscript: TranscriptCallback, language = 'en-US') {
     this.callId = callId;
@@ -71,6 +74,14 @@ export class DeepgramTranscriptionSession {
 
     this.dgSocket.on(LiveTranscriptionEvents.Close, () => {
       console.log(`[Deepgram] Session closed for call ${this.callId}`);
+      if (!this.stopped && this.reconnectAttempt < DeepgramTranscriptionSession.MAX_RECONNECTS) {
+        const delay = Math.pow(2, this.reconnectAttempt) * 1000;
+        this.reconnectAttempt++;
+        console.log(`[Deepgram] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt}/${DeepgramTranscriptionSession.MAX_RECONNECTS})`);
+        setTimeout(() => { if (!this.stopped) this.start(); }, delay);
+      } else if (!this.stopped) {
+        console.error(`[Deepgram] Max reconnects reached for call ${this.callId} — transcription stopped`);
+      }
     });
   }
 
@@ -88,6 +99,7 @@ export class DeepgramTranscriptionSession {
   }
 
   stop(): void {
+    this.stopped = true;
     this.dgSocket?.finish();
     this.dgSocket = null;
   }

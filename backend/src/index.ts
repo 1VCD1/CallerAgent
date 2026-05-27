@@ -14,6 +14,7 @@ if (config.app.sentryDsn) {
 }
 import callsPlugin from './api/routes/calls';
 import webhooksPlugin, { registerRecordingRoutes } from './api/routes/webhooks';
+import analyticsPlugin from './api/routes/analytics';
 import { activeOrchestrators } from './api/routes/calls';
 
 // Registry of browser monitor clients: callId → set of WebSocket connections
@@ -204,9 +205,12 @@ async function bootstrap() {
 
   await fastify.register(callsPlugin);
   await fastify.register(webhooksPlugin);
+  await fastify.register(analyticsPlugin);
   registerRecordingRoutes(fastify);
 
   fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
+
+  fastify.get('/dashboard', async (_request, reply) => reply.redirect('/dashboard.html'));
 
   // Redirect to monitor page for the current active call
   fastify.get('/monitor/active', async (request, reply) => {

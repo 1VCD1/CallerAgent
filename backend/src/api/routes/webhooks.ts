@@ -50,8 +50,10 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
     const orchestrator = activeOrchestrators.get(callId);
 
     if (CallStatus === 'in-progress' && orchestrator) {
+      console.log(`[Status] Call ${callId} answered — starting navigation`);
       await orchestrator.onCallConnected();
     } else if (['completed', 'failed', 'busy', 'no-answer'].includes(CallStatus)) {
+      console.log(`[Status] Call ${callId} ended — Twilio status: ${CallStatus}`);
       await query(
         `UPDATE calls SET status = 'ENDED', ended_at = NOW(),
          ended_reason = COALESCE(ended_reason, $2)
@@ -62,6 +64,8 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       activeOrchestrators.delete(callId);
       // Fire post-call summary in background
       generateCallSummary(callId).catch(console.error);
+    } else {
+      console.log(`[Status] Call ${callId} status: ${CallStatus}`);
     }
 
     return reply.send('ok');
@@ -129,6 +133,14 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
 
     // Keep the orchestrator's action cache in sync so prefetchDecision has real previousActions
     if (orchestrator) orchestrator.updateActionCache(previousActions);
+
+    // Short-circuit: very first Gather with no speech — IVR hasn't spoken yet, just wait
+    if (!spokenText && !digits && previousActions.length === 0) {
+      console.log(`[Gather] First Gather empty — waiting for IVR to speak`);
+      const gatherUrl = `${config.app.webhookBaseUrl}/webhooks/twilio/gather?callId=${callId}`;
+      reply.type('text/xml').send(buildGatherTwiML(gatherUrl));
+      return;
+    }
 
     // Get call info
     const callRow = await query<{ company: string; goal: string; status: string; user_id: string }>(
@@ -205,7 +217,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
     // Only when spokenText is empty — if IVR said something, always call LLM to respond
     if (consecutiveWaits >= 3 && !spokenText) {
       console.log(`[Gather] ${consecutiveWaits} consecutive waits w/ no speech — skipping LLM, returning Gather`);
-      const gatherUrl = `${config.app.webhookBaseUrl}/twilio/gather?callId=${callId}`;
+      const gatherUrl = `${config.app.webhookBaseUrl}/webhooks/twilio/gather?callId=${callId}`;
       reply.type('text/xml').send(buildGatherTwiML(gatherUrl));
       return;
     }
@@ -283,12 +295,15 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         }
       }
 
-      // LLM-based human detection
-      // Require EITHER: is_human: true with confidence >= 0.6
-      // OR: action === escalate_to_user with confidence >= 0.6
-      // (LLM sometimes returns escalate_to_user with is_human: false — tolerate if confidence high enough)
+      // Lower detection threshold if a transfer was just announced
+      const TRANSFER_PHRASES = ['transferring you', 'connecting you', 'let me transfer', "i'll transfer", 'one moment while i connect', 'connect you to'];
+      const recentIvrText = transcripts.slice(-3).map(t => t.text).join(' ').toLowerCase();
+      const transferPending = TRANSFER_PHRASES.some(p => recentIvrText.includes(p));
+      const humanThreshold = transferPending ? 0.35 : 0.75;
+      if (transferPending) console.log(`[Gather] Transfer pending — lowering human threshold to ${humanThreshold}`);
+
       const humanConf = action.humanConfidence ?? 0;
-      const humanDetected = (action.isHuman || action.action === 'escalate_to_user') && humanConf >= 0.75;
+      const humanDetected = (action.isHuman || action.action === 'escalate_to_user') && humanConf >= humanThreshold;
       if (humanDetected) {
         console.log(`[Gather] Human detected! isHuman=${action.isHuman} action=${action.action} confidence=${humanConf}`);
 
@@ -346,7 +361,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       }
 
       const lowConfParam = newLowConf > 0 ? `&lowConf=${newLowConf}` : '';
-      const gatherUrl = `${config.app.webhookBaseUrl}/twilio/gather?callId=${callId}${lowConfParam}`;
+      const gatherUrl = `${config.app.webhookBaseUrl}/webhooks/twilio/gather?callId=${callId}${lowConfParam}`;
 
       // escalate_to_user with low confidence means LLM is uncertain — don't hang up, just wait
       const safeAction = (action.action === 'escalate_to_user' && humanConf < 0.75) ? 'wait' : action.action;
@@ -371,7 +386,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
     } catch (err) {
       console.error('[Gather] LLM error:', err);
       const retries = parseInt((query_params.retries ?? '0'), 10);
-      if (retries >= 2) {
+      if (retries >= 4) {
         // 3 consecutive LLM failures — end the call rather than loop forever
         await query(
           `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'llm_error' WHERE id = $1`,
@@ -385,7 +400,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
   <Hangup/>
 </Response>`;
       } else {
-        const gatherUrl = `${config.app.webhookBaseUrl}/twilio/gather?callId=${callId}&retries=${retries + 1}&lowConf=${lowConf}`;
+        const gatherUrl = `${config.app.webhookBaseUrl}/webhooks/twilio/gather?callId=${callId}&retries=${retries + 1}&lowConf=${lowConf}`;
         twiml = buildGatherTwiML(gatherUrl);
       }
     }
@@ -399,16 +414,23 @@ function buildActionTwiML(action: string, value: string | undefined, gatherUrl: 
 
   switch (action) {
     case 'press_key':
-      innerXml = `<Play digits="${value ?? '0'}"/>`;
+      // 'w' adds a 500ms pause after the digit for cleaner IVR recognition
+      innerXml = `<Pause length="1"/><Play digits="w${value ?? '0'}w"/>`;
       break;
     case 'say_phrase':
-      innerXml = `<Say voice="${voice}">${value ?? 'representative'}</Say>`;
+      innerXml = `<Say voice="${voice}">${escapeXml(value ?? 'representative')}</Say>`;
       break;
     case 'wait': {
-      const rawSecs = parseInt(value ?? '5', 10);
-      const cappedSecs = isNaN(rawSecs) ? 5 : Math.min(Math.max(rawSecs, 1), 20);
-      innerXml = `<Pause length="${cappedSecs}"/>`;
-      break;
+      const rawSecs = parseInt(value ?? '3', 10);
+      const cappedSecs = isNaN(rawSecs) ? 3 : Math.min(Math.max(rawSecs, 1), 8);
+      // Pause INSIDE the Gather so we keep listening while waiting
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather input="speech dtmf" timeout="8" speechTimeout="2" action="${gatherUrl}" method="POST">
+    <Pause length="${cappedSecs}"/>
+  </Gather>
+  <Redirect method="POST">${gatherUrl}</Redirect>
+</Response>`;
     }
     case 'end_call':
       return `<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`;
@@ -425,17 +447,26 @@ function buildActionTwiML(action: string, value: string | undefined, gatherUrl: 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   ${innerXml}
-  <Gather input="speech dtmf" timeout="3" speechTimeout="auto" action="${gatherUrl}" method="POST">
+  <Gather input="speech dtmf" timeout="8" speechTimeout="2" action="${gatherUrl}" method="POST">
     <Pause length="1"/>
   </Gather>
   <Redirect method="POST">${gatherUrl}</Redirect>
 </Response>`;
 }
 
+function escapeXml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 function buildGatherTwiML(gatherUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech dtmf" timeout="3" speechTimeout="auto" action="${gatherUrl}" method="POST">
+  <Gather input="speech dtmf" timeout="8" speechTimeout="2" action="${gatherUrl}" method="POST">
     <Pause length="1"/>
   </Gather>
   <Redirect method="POST">${gatherUrl}</Redirect>

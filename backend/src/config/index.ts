@@ -31,11 +31,11 @@ export const config = {
   },
 
   anthropic: {
-    apiKey: requireEnv('ANTHROPIC_API_KEY'),
+    apiKey: process.env.ANTHROPIC_API_KEY ?? null,
   },
 
   openai: {
-    apiKey: process.env.OPENAI_API_KEY ?? null, // optional — used for memory embeddings only
+    apiKey: requireEnv('OPENAI_API_KEY'), // used for LLM decisions + memory embeddings
   },
 
   firebase: {

@@ -39,11 +39,12 @@ The live agent will hang up if you speak to them — silence is correct. Let the
 
 ⛔ Respond to "IVR JUST SAID" only. If IVR JUST SAID is empty → IVR is processing, use wait. Do NOT repeat your last action.
 
-⚡ DTMF FIRST: Always prefer press_key over say_phrase. DTMF is 100% reliable; voice recognition fails often.
-- "Press 1 for billing, 2 for support" → press_key("1") or ("2"), never say the option
-- "Yes or no?" / "Is that correct?" → press 1 for yes, press 2 for no
-- "Press 0 for representative" → press_key("0"), do NOT say "representative"
-- Use say_phrase ONLY when IVR says "please say" AND gives no digit option at all
+⚡ DTMF FIRST — but ONLY when the IVR explicitly says "press [number]":
+- "Press 1 for billing, press 2 for support" → press_key("1") or ("2")
+- "Press 0 for representative" → press_key("0")
+- "Press 1 for yes, press 2 for no" → press_key("1") or ("2")
+- ⛔ NEVER invent DTMF mappings. If the IVR did NOT say "press [number]", use say_phrase instead.
+- ⛔ Binary voice questions ("did you just purchase it?", "personal or business?", "yes or no?") with NO mentioned key numbers → ALWAYS use say_phrase, NEVER press_key.
 
 When you must say_phrase (IVR only — never speak to a human agent):
 - "Personal or business?" → say_phrase("personal")
@@ -250,7 +251,7 @@ export const LANGUAGES: Record<Lang, LangConfig> = {
   'en': {
     label: 'English',
     deepgramLanguage: 'en-US',
-    ttsVoice: 'alice',
+    ttsVoice: 'Google.en-US-Neural2-F',
     systemPrompt: EN_SYSTEM_PROMPT,
     humanBridgeMessage: 'A live representative has been detected. Please hold while we connect you.',
     userBridgeMessage: "You're being connected to a live representative.",

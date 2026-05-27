@@ -1,8 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { config } from '../config';
 import { query } from '../db/client';
 
-const anthropic = new Anthropic({ apiKey: config.anthropic.apiKey });
+const openai = new OpenAI({ apiKey: config.openai.apiKey! });
 
 export async function generateCallSummary(callId: string): Promise<void> {
   const callRow = await query<{ company: string; goal: string; status: string; ended_reason: string | null }>(
@@ -27,13 +27,17 @@ export async function generateCallSummary(callId: string): Promise<void> {
     ? 'human_reached'
     : ended_reason ?? 'failed';
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
     max_tokens: 512,
-    system: `You analyze phone call transcripts to extract IVR navigation knowledge. Be concise and factual.`,
-    messages: [{
-      role: 'user',
-      content: `Company: ${company}
+    messages: [
+      {
+        role: 'system',
+        content: `You analyze phone call transcripts to extract IVR navigation knowledge. Be concise and factual.`,
+      },
+      {
+        role: 'user',
+        content: `Company: ${company}
 Goal: ${goal}
 Outcome: ${outcome}
 
@@ -48,13 +52,12 @@ Write a concise IVR navigation note (3-6 bullet points) covering:
 - Best approach for next time
 
 Format: plain bullet points starting with "-". No headers.`,
-    }],
+      },
+    ],
   });
 
-  const content = response.content[0];
-  if (content.type !== 'text') return;
-
-  const summary = content.text.trim();
+  const summary = response.choices[0]?.message?.content?.trim() ?? '';
+  if (!summary) return;
 
   // Upsert: update existing note or insert new one for this company
   const existing = await query<{ id: string; summary: string }>(
@@ -79,13 +82,17 @@ Format: plain bullet points starting with "-". No headers.`,
 }
 
 async function consolidateNotes(existing: string, fresh: string, company: string): Promise<string> {
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
     max_tokens: 600,
-    system: `You consolidate IVR navigation knowledge. Synthesize old and new observations into a single updated knowledge base. Be concise, factual, and actionable.`,
-    messages: [{
-      role: 'user',
-      content: `Company: ${company}
+    messages: [
+      {
+        role: 'system',
+        content: `You consolidate IVR navigation knowledge. Synthesize old and new observations into a single updated knowledge base. Be concise, factual, and actionable.`,
+      },
+      {
+        role: 'user',
+        content: `Company: ${company}
 
 EXISTING KNOWLEDGE:
 ${existing}
@@ -101,11 +108,11 @@ Synthesize both into an updated knowledge base (5-8 bullet points max).
 - Note any IVR structure, verification requirements, or timing constraints
 
 Format: plain bullet points starting with "-". No headers.`,
-    }],
+      },
+    ],
   });
 
-  const content = response.content[0];
-  return content.type === 'text' ? content.text.trim() : `${existing}\n${fresh}`;
+  return response.choices[0]?.message?.content?.trim() ?? `${existing}\n${fresh}`;
 }
 
 export async function getCompanyIvrNotes(company: string): Promise<string | null> {

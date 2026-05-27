@@ -1,11 +1,11 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { config } from '../config';
 import { LLMAction, CallContext, ActionRecord, MemoryPattern, UserInfo } from '../types';
 import { query } from '../db/client';
 import { getLang } from '../languages';
 
-const anthropic = new Anthropic({
-  apiKey: config.anthropic.apiKey,
+const openai = new OpenAI({
+  apiKey: config.openai.apiKey!,
 });
 
 const SYSTEM_PROMPT = `You are an adaptive customer service navigation agent.
@@ -52,26 +52,41 @@ IVR navigation principles:
 1. Prioritize historically successful paths (high success_rate)
 2. "0" or "say representative" often escalates to human agents
 3. If stuck in a loop, try a different approach
-4. If hold music plays, use the wait action`;
+4. If hold music plays, use the wait action
+
+After a transfer announcement ("transferring you", "connecting you to an agent", "one moment while I connect you"), the next person who speaks is likely a live human. A brief wait of 2-3 seconds max is appropriate — do not wait longer than 3 seconds when a transfer was just announced.`;
 
 export async function decideLLMAction(context: CallContext): Promise<LLMAction> {
   const userMessage = buildContextMessage(context);
-
   const langConfig = getLang(context.language);
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 180,
-    system: langConfig.systemPrompt,
-    messages: [{ role: 'user', content: userMessage }],
-  });
-
-  const content = response.content[0];
-  if (content.type !== 'text') throw new Error('Unexpected LLM response type');
-
-  const action = parseAction(content.text);
-  await persistAction(context.callId, action);
-  return action;
+  const RETRY_DELAYS = [0, 1000, 3000];
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+    if (RETRY_DELAYS[attempt] > 0) await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
+    try {
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        max_tokens: 320,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: langConfig.systemPrompt },
+          { role: 'user',   content: userMessage },
+        ],
+      });
+      const text = response.choices[0]?.message?.content ?? '';
+      const action = parseAction(text);
+      await persistAction(context.callId, action);
+      return action;
+    } catch (err: any) {
+      lastErr = err;
+      const isTransient = (err?.status === 503) ||
+        (err?.status === 429 && err?.error?.type !== 'insufficient_quota');
+      if (!isTransient) throw err;
+      console.warn(`[LLM] Attempt ${attempt + 1} transient error (${err.status}), retrying…`);
+    }
+  }
+  throw lastErr;
 }
 
 function buildContextMessage(ctx: CallContext): string {
@@ -212,19 +227,30 @@ function formatMemory(m: MemoryPattern): string {
 function parseAction(text: string): LLMAction {
   const stripped = text.replace(/```json\n?|\n?```/g, '').trim();
   const match = stripped.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('No JSON object found in LLM response');
-  const parsed = JSON.parse(match[0]);
+  if (!match) {
+    console.warn(`[LLM] No JSON in response, defaulting to wait. Raw: ${text.slice(0, 200)}`);
+    return { action: 'wait', value: '4', reasoning: 'parse_fallback', confidence: 0.5, isHuman: false, humanConfidence: 0 };
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(match[0]);
+  } catch {
+    console.warn(`[LLM] JSON parse failed, defaulting to wait. Raw: ${text.slice(0, 200)}`);
+    return { action: 'wait', value: '4', reasoning: 'parse_fallback', confidence: 0.5, isHuman: false, humanConfidence: 0 };
+  }
 
   const validActions = ['press_key', 'say_phrase', 'wait', 'retry', 'end_call', 'escalate_to_user'];
   if (!validActions.includes(parsed.action)) {
-    throw new Error(`Invalid action: ${parsed.action}`);
+    console.warn(`[LLM] Invalid action "${parsed.action}", defaulting to wait`);
+    return { action: 'wait', value: '4', reasoning: 'invalid_action_fallback', confidence: 0.5, isHuman: false, humanConfidence: 0 };
   }
 
   return {
     action: parsed.action,
     value: parsed.value,
     reasoning: parsed.reasoning ?? '',
-    confidence: parsed.confidence ?? 0.5,
+    confidence: parsed.confidence > 0 ? parsed.confidence : 0.5,
     isHuman: parsed.is_human ?? false,
     humanConfidence: parsed.human_confidence ?? 0.0,
   };

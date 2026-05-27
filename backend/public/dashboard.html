@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CallerAgent — Analytics</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen">
+
+  <!-- Nav -->
+  <nav class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-sm select-none">CA</div>
+      <span class="font-semibold text-slate-800">CallerAgent</span>
+      <span class="text-slate-300">·</span>
+      <span class="text-slate-500 text-sm">Analytics</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="last-updated" class="text-slate-400 text-xs"></span>
+      <button id="refresh-btn" onclick="loadAll()"
+        class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 active:bg-indigo-800 transition-colors text-xs font-medium disabled:opacity-50">
+        Refresh
+      </button>
+    </div>
+  </nav>
+
+  <div class="max-w-6xl mx-auto px-6 py-8 space-y-6">
+
+    <!-- Overview cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4" id="cards-row">
+      <div class="bg-white rounded-xl border border-slate-200 p-5 h-24 animate-pulse"></div>
+      <div class="bg-white rounded-xl border border-slate-200 p-5 h-24 animate-pulse"></div>
+      <div class="bg-white rounded-xl border border-slate-200 p-5 h-24 animate-pulse"></div>
+    </div>
+
+    <!-- Middle row: outcomes chart + company table -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Call Outcomes</h2>
+        <div id="outcomes-wrap" class="flex items-center justify-center min-h-48">
+          <div class="w-40 h-40 bg-slate-100 rounded-full animate-pulse"></div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Per Company</h2>
+        <div id="companies-wrap">
+          <div class="space-y-2">
+            <div class="h-7 bg-slate-100 rounded animate-pulse"></div>
+            <div class="h-7 bg-slate-100 rounded animate-pulse"></div>
+            <div class="h-7 bg-slate-100 rounded animate-pulse"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Navigation patterns -->
+    <div class="bg-white rounded-xl border border-slate-200 p-5">
+      <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Navigation Patterns</h2>
+      <div id="patterns-wrap">
+        <div class="space-y-2">
+          <div class="h-7 bg-slate-100 rounded animate-pulse"></div>
+          <div class="h-7 bg-slate-100 rounded animate-pulse"></div>
+          <div class="h-7 bg-slate-100 rounded animate-pulse"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const OUTCOME_LABELS = {
+      human_reached:  'Human Reached',
+      outside_hours:  'Outside Hours',
+      max_attempts:   'Max Attempts',
+      low_confidence: 'Low Confidence',
+      llm_error:      'LLM Error',
+      user_cancelled: 'Cancelled',
+      server_restart: 'Server Restart',
+      completed:      'Completed',
+    };
+
+    const OUTCOME_COLORS = {
+      human_reached:  '#10b981',
+      outside_hours:  '#f59e0b',
+      max_attempts:   '#f97316',
+      low_confidence: '#8b5cf6',
+      llm_error:      '#ef4444',
+      user_cancelled: '#94a3b8',
+      server_restart: '#cbd5e1',
+      completed:      '#3b82f6',
+    };
+
+    const STEP_COLORS = {
+      press_key:        'bg-blue-100 text-blue-700',
+      say_phrase:       'bg-emerald-100 text-emerald-700',
+      wait:             'bg-slate-100 text-slate-500',
+      end_call:         'bg-red-100 text-red-600',
+      escalate_to_user: 'bg-purple-100 text-purple-700',
+      retry:            'bg-amber-100 text-amber-700',
+    };
+
+    function fmtWait(secs) {
+      if (secs == null) return '—';
+      if (secs < 60) return secs + 's';
+      const m = Math.floor(secs / 60), s = secs % 60;
+      return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    }
+
+    function successBadge(pct) {
+      if (pct == null) return `<span class="text-slate-300">—</span>`;
+      const cls = pct >= 70 ? 'bg-emerald-100 text-emerald-700'
+                : pct >= 40 ? 'bg-amber-100 text-amber-700'
+                :              'bg-red-100 text-red-600';
+      return `<span class="inline-block px-2 py-0.5 rounded text-xs font-semibold ${cls}">${pct}%</span>`;
+    }
+
+    function pathStep(raw) {
+      const m = raw.match(/^(\w+)\((.+)\)$/);
+      const action = m ? m[1] : raw;
+      const value  = m ? m[2] : '';
+      const cls = STEP_COLORS[action] ?? 'bg-slate-100 text-slate-500';
+      const label = value ? `${action}(${value})` : action;
+      return `<span class="inline-block px-1.5 py-0.5 rounded text-xs font-mono ${cls}">${label}</span>`;
+    }
+
+    function fmtOutcome(key) {
+      return OUTCOME_LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    let outcomeChart = null;
+
+    // ── Overview cards ────────────────────────────────────────────────────────
+
+    async function loadOverview() {
+      const d = await fetch('/analytics/overview').then(r => r.json());
+      const pctColor = d.successPct == null ? 'text-slate-400'
+                     : d.successPct >= 70    ? 'text-emerald-600'
+                     : d.successPct >= 40    ? 'text-amber-500'
+                     :                         'text-red-500';
+      document.getElementById('cards-row').innerHTML = `
+        <div class="bg-white rounded-xl border border-slate-200 p-5">
+          <div class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Total Calls</div>
+          <div class="text-3xl font-bold text-slate-800">${d.totalCalls}</div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 p-5">
+          <div class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Success Rate</div>
+          <div class="text-3xl font-bold ${pctColor}">${d.successPct != null ? d.successPct + '%' : '—'}</div>
+          <div class="text-xs text-slate-400 mt-1">${d.successful} of ${d.totalCalls} reached human</div>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 p-5">
+          <div class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1">Avg Wait (success)</div>
+          <div class="text-3xl font-bold text-slate-800">${fmtWait(d.avgWaitSecs)}</div>
+          <div class="text-xs text-slate-400 mt-1">time to reach a human</div>
+        </div>
+      `;
+    }
+
+    // ── Outcomes doughnut ────────────────────────────────────────────────────
+
+    async function loadOutcomes() {
+      const data = await fetch('/analytics/outcomes').then(r => r.json());
+      const wrap = document.getElementById('outcomes-wrap');
+
+      if (!data.length) {
+        wrap.innerHTML = `<div class="text-slate-400 text-sm text-center py-12">No calls yet.</div>`;
+        return;
+      }
+
+      wrap.innerHTML = `
+        <div class="flex items-center gap-6 w-full">
+          <div class="flex-shrink-0" style="width:160px;height:160px">
+            <canvas id="outcomes-chart"></canvas>
+          </div>
+          <div id="outcomes-legend" class="flex-1 space-y-1.5 text-sm min-w-0"></div>
+        </div>`;
+
+      const labels = data.map(d => fmtOutcome(d.outcome));
+      const counts = data.map(d => d.count);
+      const colors = data.map(d => OUTCOME_COLORS[d.outcome] ?? '#94a3b8');
+      const total  = counts.reduce((a, b) => a + b, 0);
+
+      if (outcomeChart) { outcomeChart.destroy(); outcomeChart = null; }
+      outcomeChart = new Chart(document.getElementById('outcomes-chart').getContext('2d'), {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{ data: counts, backgroundColor: colors, borderWidth: 2, borderColor: '#f8fafc' }],
+        },
+        options: {
+          cutout: '65%',
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw}` } },
+          },
+        },
+      });
+
+      document.getElementById('outcomes-legend').innerHTML = data.map((d, i) => `
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${colors[i]}"></span>
+          <span class="text-slate-600 truncate">${labels[i]}</span>
+          <span class="ml-auto font-semibold text-slate-700 flex-shrink-0">${d.count}</span>
+          <span class="text-slate-400 text-xs flex-shrink-0 w-8 text-right">${Math.round(d.count / total * 100)}%</span>
+        </div>
+      `).join('');
+    }
+
+    // ── Companies table ───────────────────────────────────────────────────────
+
+    async function loadCompanies() {
+      const data = await fetch('/analytics/companies').then(r => r.json());
+      const wrap = document.getElementById('companies-wrap');
+
+      if (!data.length) {
+        wrap.innerHTML = `<div class="text-slate-400 text-sm text-center py-12">No calls yet.</div>`;
+        return;
+      }
+
+      wrap.innerHTML = `
+        <div class="overflow-x-auto -mx-1">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-xs text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                <th class="text-left pb-2.5 font-medium pl-1">Company</th>
+                <th class="text-right pb-2.5 font-medium">Calls</th>
+                <th class="text-right pb-2.5 font-medium">Success</th>
+                <th class="text-right pb-2.5 font-medium pr-1">Avg Wait</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.map(d => `
+                <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
+                  <td class="py-2.5 pl-1 font-medium text-slate-700 capitalize">${d.company}</td>
+                  <td class="py-2.5 text-right text-slate-500">${d.total}</td>
+                  <td class="py-2.5 text-right">${successBadge(d.successPct)}</td>
+                  <td class="py-2.5 text-right text-slate-400 text-xs pr-1">${fmtWait(d.avgWaitSecs)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }
+
+    // ── Navigation patterns ───────────────────────────────────────────────────
+
+    async function loadPatterns() {
+      const data = await fetch('/analytics/patterns').then(r => r.json());
+      const wrap = document.getElementById('patterns-wrap');
+
+      if (!data.length) {
+        wrap.innerHTML = `<div class="text-slate-400 text-sm text-center py-8">No patterns recorded yet — they appear after calls complete.</div>`;
+        return;
+      }
+
+      wrap.innerHTML = `
+        <div class="overflow-x-auto -mx-1">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-xs text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                <th class="text-left pb-2.5 font-medium pl-1">Company</th>
+                <th class="text-left pb-2.5 font-medium">Path</th>
+                <th class="text-right pb-2.5 font-medium">Success</th>
+                <th class="text-right pb-2.5 font-medium">Calls</th>
+                <th class="text-right pb-2.5 font-medium">Avg Wait</th>
+                <th class="text-right pb-2.5 font-medium pr-1">Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.map(d => `
+                <tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors align-top">
+                  <td class="py-2.5 pl-1 font-medium text-slate-700 capitalize whitespace-nowrap pr-3">${d.company}</td>
+                  <td class="py-2.5">
+                    <div class="flex flex-wrap gap-1 items-center">
+                      ${d.path.map((s, i) =>
+                        (i > 0 ? `<span class="text-slate-200 text-xs">›</span>` : '') + pathStep(s)
+                      ).join('')}
+                    </div>
+                  </td>
+                  <td class="py-2.5 text-right whitespace-nowrap">${successBadge(d.successRate)}</td>
+                  <td class="py-2.5 text-right text-slate-500">${d.sampleCount}</td>
+                  <td class="py-2.5 text-right text-slate-400 text-xs whitespace-nowrap">${fmtWait(d.avgWaitSecs)}</td>
+                  <td class="py-2.5 text-right text-slate-400 text-xs pr-1">${d.strategyScore}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }
+
+    // ── Bootstrap ─────────────────────────────────────────────────────────────
+
+    async function loadAll() {
+      const btn = document.getElementById('refresh-btn');
+      btn.textContent = 'Loading…';
+      btn.disabled = true;
+      try {
+        await Promise.all([loadOverview(), loadOutcomes(), loadCompanies(), loadPatterns()]);
+        document.getElementById('last-updated').textContent =
+          'Updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      } catch (err) {
+        console.error('Dashboard load error:', err);
+      } finally {
+        btn.textContent = 'Refresh';
+        btn.disabled = false;
+      }
+    }
+
+    loadAll();
+    setInterval(loadAll, 30_000);
+  </script>
+
+</body>
+</html>

@@ -5,19 +5,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/theme';
 import { getUserId, setUserId, createUser, getUser, updateUser, getApiUrl, setApiUrl, getApiKey, setApiKey, getIvrNotes, IvrNote } from '@/api';
 
-const LANGUAGES = [
-  { code: 'en',    label: 'English'  },
-  { code: 'zh-TW', label: '繁體中文' },
-  { code: 'zh-CN', label: '简体中文' },
-] as const;
-
 export default function ProfileScreen() {
   const [userId, setLocalUserId] = useState<string | null>(null);
   const [name, setName]       = useState('');
   const [phone, setPhone]     = useState('');
   const [birthday, setBirthday] = useState('');
   const [email, setEmail]     = useState('');
-  const [language, setLanguage] = useState<'en' | 'zh-TW' | 'zh-CN'>('en');
   const [apiUrl, setLocalApiUrl] = useState('');
   const [apiKey, setLocalApiKey] = useState('');
   const [saving, setSaving]   = useState(false);
@@ -40,7 +33,6 @@ export default function ProfileScreen() {
         if (u.phone_number) setPhone(u.phone_number);
         if (u.birthday)     setBirthday(u.birthday.slice(0, 10));
         if (u.email)        setEmail(u.email);
-        if (u.language)     setLanguage(u.language as any);
       } catch {}
     })();
   }, []);
@@ -64,7 +56,6 @@ export default function ProfileScreen() {
       if (phone.trim())    data.phoneNumber = phone.trim();
       if (birthday.trim()) data.birthday = birthday.trim();
       if (email.trim())    data.email = email.trim();
-      data.language = language;
       if (Object.keys(data).length) await updateUser(uid, data);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -92,19 +83,6 @@ export default function ProfileScreen() {
           <F label="Date of Birth (YYYY-MM-DD)" placeholder="1990-01-15" value={birthday} onChangeText={setBirthday} />
           <F label="Email" placeholder="you@email.com" value={email} onChangeText={setEmail}
             keyboardType="email-address" autoCapitalize="none" />
-
-          <Text style={s.label}>Language / 語言</Text>
-          <View style={s.langRow}>
-            {LANGUAGES.map(({ code, label }) => (
-              <TouchableOpacity
-                key={code}
-                style={[s.langBtn, language === code && s.langBtnActive]}
-                onPress={() => setLanguage(code as any)}
-              >
-                <Text style={[s.langLabel, language === code && { color: colors.blue }]}>{label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
         <View style={s.card}>
@@ -237,10 +215,6 @@ const s = StyleSheet.create({
   testBtnTxt:  { color: colors.subtext, fontSize: 13, fontWeight: '600' },
   saveBtn:     { backgroundColor: colors.blue, borderRadius: 12, paddingVertical: 15, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
   saveBtnTxt:  { color: '#fff', fontSize: 15, fontWeight: '700' },
-  langRow:     { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  langBtn:     { flex: 1, minWidth: 90, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, alignItems: 'center', gap: 4, backgroundColor: colors.input },
-  langBtnActive:{ borderColor: colors.blue, backgroundColor: '#1e3a5f' },
-  langLabel:   { fontSize: 13, fontWeight: '600', color: colors.subtext },
   noteMeta:      { fontSize: 11, color: colors.muted },
   outcomeBadge:  { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   outcomeTxt:    { fontSize: 12, fontWeight: '700' },
