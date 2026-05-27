@@ -118,6 +118,20 @@ ${ctx.userInfo.birthday ? `  Date of birth: ${ctx.userInfo.birthday}` : ''}`.tri
     ? `\n📋 PRIOR CALL NOTES FOR ${ctx.company.toUpperCase()} (learn from these):\n${ctx.companyIvrNotes}`
     : '';
 
+  const audioBlock = ctx.audioAnalysis && ctx.audioAnalysis.framesAnalyzed >= 10
+    ? (() => {
+        const a = ctx.audioAnalysis!;
+        const signal = a.confidence >= 0.75 ? '🔴 STRONG HUMAN SIGNAL'
+                     : a.confidence >= 0.55 ? '🟡 POSSIBLE HUMAN SIGNAL'
+                     : '🟢 LIKELY IVR/TTS';
+        return `\n🔊 AUDIO ANALYSIS (${a.framesAnalyzed} frames of live audio):
+  ${signal} — audio confidence: ${(a.confidence * 100).toFixed(0)}%
+  Voice naturalness (RMS variance): ${a.rmsVariance.toFixed(0)} ${a.rmsVariance > 2000000 ? '← HIGH (human-like)' : '← LOW (smooth/TTS-like)'}
+  Pitch variation: ${a.pitchVariance.toFixed(2)} ${a.pitchVariance > 0.65 ? '← HIGH (human-like)' : '← LOW (TTS-like)'}${a.hasDisfluencies ? '\n  ✓ Disfluencies detected (um/uh) — strong human signal' : ''}
+  Use this alongside the transcript — audio does not lie, transcript can be misheard.`;
+      })()
+    : '';
+
   const utteranceBlock = ctx.currentIvrUtterance
     ? `\n🎙 IVR JUST SAID (respond to THIS):\n"${ctx.currentIvrUtterance}"`
     : `\n🎙 IVR JUST SAID: (nothing — IVR is processing your last action. Use wait.)`;
@@ -130,6 +144,7 @@ ${menuKeysBlock}
 ${waitWarning}
 ${sameKeyWarning}
 ${ivrNotesBlock}
+${audioBlock}
 ${utteranceBlock}
 
 CONVERSATION HISTORY (last 500 chars):

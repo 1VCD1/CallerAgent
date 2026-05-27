@@ -198,6 +198,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       currentIvrUtterance: spokenText || undefined,
       consecutiveWaits,
       consecutiveSameKey,
+      audioAnalysis: orchestrator?.getAudioAnalysis() ?? null,
     };
 
     let twiml: string;
