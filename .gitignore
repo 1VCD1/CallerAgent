@@ -1,0 +1,25 @@
+# Secrets — never commit real credentials
+.env
+.env.local
+*.env
+
+# Dependencies
+node_modules/
+
+# Large binaries (download separately)
+cloudflared.exe
+ngrok.exe
+
+# Logs
+*.log
+server.log
+
+# TypeScript build artifacts
+dist/
+*.tsbuildinfo
+
+# Claude Code internal state
+.claude/
+
+# macOS
+.DS_Store

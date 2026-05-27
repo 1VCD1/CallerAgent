@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CallerAgent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 9999px; }
+    .pulse { animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 px-6 py-4 flex items-center gap-3">
+    <div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">CA</div>
+    <h1 class="text-lg font-semibold">CallerAgent</h1>
+    <span class="text-slate-500 text-sm ml-auto" id="user-id-display"></span>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Left: Profile -->
+    <div class="lg:col-span-1 space-y-4">
+      <div class="bg-slate-900 rounded-xl border border-slate-800 p-5">
+        <h2 class="font-semibold text-slate-200 mb-4">Your Profile</h2>
+        <form id="profile-form" class="space-y-3">
+          <div>
+            <label class="text-xs text-slate-400 uppercase tracking-wide">Full Name</label>
+            <input id="p-name" type="text" placeholder="John Doe"
+              class="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 uppercase tracking-wide">Phone Number</label>
+            <input id="p-phone" type="tel" placeholder="+1 234 567 8900"
+              class="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500" />
+            <p class="text-xs text-slate-500 mt-1">Called when AI finds a human rep</p>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 uppercase tracking-wide">Date of Birth</label>
+            <input id="p-birthday" type="date"
+              class="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500" />
+            <p class="text-xs text-slate-500 mt-1">AI uses this when agent asks for verification</p>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 uppercase tracking-wide">Email</label>
+            <input id="p-email" type="email" placeholder="you@email.com"
+              class="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500" />
+          </div>
+          <button type="submit"
+            class="w-full bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium py-2 rounded-lg transition-colors">
+            Save Profile
+          </button>
+          <p id="profile-msg" class="text-xs text-center text-slate-400 hidden"></p>
+        </form>
+      </div>
+    </div>
+
+    <!-- Right: Make a Call + History -->
+    <div class="lg:col-span-2 space-y-4">
+
+      <!-- Make a Call -->
+      <div class="bg-slate-900 rounded-xl border border-slate-800 p-5">
+        <h2 class="font-semibold text-slate-200 mb-4">Make a Call</h2>
+        <form id="call-form" class="space-y-3">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-slate-400 uppercase tracking-wide">Company</label>
+              <input id="c-company" type="text" placeholder="Verizon, Chase, etc."
+                class="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500" />
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 uppercase tracking-wide">Their Phone Number</label>
+              <input id="c-phone" type="tel" placeholder="+1 800 922 0204"
+                class="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500" />
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 uppercase tracking-wide">Goal <span class="text-slate-600">(optional)</span></label>
+            <input id="c-goal" type="text" placeholder="Dispute a charge, cancel subscription..."
+              class="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500" />
+          </div>
+          <button type="submit" id="call-btn"
+            class="w-full bg-green-600 hover:bg-green-500 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.948V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 7V5z"/>
+            </svg>
+            Start AI Call
+          </button>
+          <p id="call-msg" class="text-xs text-center text-slate-400 hidden"></p>
+        </form>
+      </div>
+
+      <!-- Recent Calls -->
+      <div class="bg-slate-900 rounded-xl border border-slate-800 p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-semibold text-slate-200">Recent Calls</h2>
+          <button onclick="loadCalls()" class="text-xs text-slate-500 hover:text-slate-300">Refresh</button>
+        </div>
+        <div id="calls-list" class="space-y-2">
+          <p class="text-sm text-slate-500 text-center py-4">No calls yet</p>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    const API = 'http://localhost:3000';
+    let userId = localStorage.getItem('callerAgentUserId');
+    let pollTimer = null;
+
+    // ── Bootstrap ──────────────────────────────────────────────
+    async function init() {
+      if (!userId) {
+        // Create a new user on first visit
+        const res = await fetch(`${API}/users`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const user = await res.json();
+        userId = user.id;
+        localStorage.setItem('callerAgentUserId', userId);
+      }
+
+      document.getElementById('user-id-display').textContent = `ID: ${userId.slice(0, 8)}…`;
+      await loadProfile();
+      await loadCalls();
+      startPolling();
+    }
+
+    // ── Profile ────────────────────────────────────────────────
+    async function loadProfile() {
+      try {
+        const res = await fetch(`${API}/users/${userId}`);
+        if (!res.ok) return;
+        const u = await res.json();
+        if (u.name)     document.getElementById('p-name').value = u.name;
+        if (u.phone_number) document.getElementById('p-phone').value = u.phone_number;
+        if (u.birthday) document.getElementById('p-birthday').value = u.birthday.slice(0, 10);
+        if (u.email)    document.getElementById('p-email').value = u.email;
+      } catch {}
+    }
+
+    document.getElementById('profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {};
+      const name     = document.getElementById('p-name').value.trim();
+      const phone    = document.getElementById('p-phone').value.trim();
+      const birthday = document.getElementById('p-birthday').value;
+      const email    = document.getElementById('p-email').value.trim();
+      if (name)     body.name = name;
+      if (phone)    body.phoneNumber = phone;
+      if (birthday) body.birthday = birthday;
+      if (email)    body.email = email;
+
+      const res = await fetch(`${API}/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const msg = document.getElementById('profile-msg');
+      msg.classList.remove('hidden', 'text-red-400', 'text-green-400');
+      if (res.ok) {
+        msg.textContent = 'Profile saved!';
+        msg.classList.add('text-green-400');
+      } else {
+        msg.textContent = 'Save failed.';
+        msg.classList.add('text-red-400');
+      }
+      msg.classList.remove('hidden');
+      setTimeout(() => msg.classList.add('hidden'), 2500);
+    });
+
+    // ── Make a Call ────────────────────────────────────────────
+    document.getElementById('call-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const company = document.getElementById('c-company').value.trim();
+      const phone   = document.getElementById('c-phone').value.trim();
+      const goal    = document.getElementById('c-goal').value.trim();
+
+      if (!company || !phone) return;
+
+      const btn = document.getElementById('call-btn');
+      btn.disabled = true;
+      btn.textContent = 'Dialing…';
+
+      const res = await fetch(`${API}/calls`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company, phoneNumber: phone, goal: goal || undefined, userId }),
+      });
+
+      const msg = document.getElementById('call-msg');
+      msg.classList.remove('hidden', 'text-red-400', 'text-green-400');
+
+      if (res.ok) {
+        const data = await res.json();
+        msg.textContent = `Call started! ID: ${data.callId.slice(0, 8)}…`;
+        msg.classList.add('text-green-400');
+        document.getElementById('c-company').value = '';
+        document.getElementById('c-phone').value = '';
+        document.getElementById('c-goal').value = '';
+        await loadCalls();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        msg.textContent = err.message || 'Failed to start call.';
+        msg.classList.add('text-red-400');
+      }
+
+      msg.classList.remove('hidden');
+      btn.disabled = false;
+      btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.948V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 7V5z"/></svg> Start AI Call`;
+    });
+
+    // ── Calls List ─────────────────────────────────────────────
+    async function loadCalls() {
+      try {
+        const res = await fetch(`${API}/calls?userId=${userId}&limit=10`);
+        const calls = await res.json();
+        renderCalls(calls);
+      } catch {}
+    }
+
+    function statusBadge(status) {
+      const map = {
+        INIT:           ['bg-slate-700 text-slate-300', '●', 'Init'],
+        DIALING:        ['bg-yellow-900 text-yellow-300', '●', 'Dialing'],
+        IVR_NAVIGATION: ['bg-blue-900 text-blue-300 pulse', '●', 'Navigating IVR'],
+        HUMAN_DETECTED: ['bg-green-900 text-green-300', '●', 'Human Found'],
+        USER_NOTIFIED:  ['bg-green-900 text-green-300', '●', 'User Notified'],
+        BRIDGED:        ['bg-emerald-900 text-emerald-300', '●', 'Bridged'],
+        ENDED:          ['bg-slate-700 text-slate-400', '●', 'Ended'],
+        FAILED:         ['bg-red-900 text-red-300', '●', 'Failed'],
+        ON_HOLD:        ['bg-orange-900 text-orange-300 pulse', '●', 'On Hold'],
+      };
+      const [cls, dot, label] = map[status] || ['bg-slate-700 text-slate-400', '●', status];
+      return `<span class="status-badge ${cls}"><span class="${cls.includes('pulse') ? 'pulse' : ''}">${dot}</span>${label}</span>`;
+    }
+
+    function renderCalls(calls) {
+      const list = document.getElementById('calls-list');
+      if (!calls.length) {
+        list.innerHTML = '<p class="text-sm text-slate-500 text-center py-4">No calls yet</p>';
+        return;
+      }
+      list.innerHTML = calls.map(c => {
+        const started = new Date(c.started_at).toLocaleString();
+        const duration = c.wait_duration_seconds ? `${c.wait_duration_seconds}s wait` : '';
+        const active = !['ENDED', 'FAILED', 'BRIDGED'].includes(c.status);
+        return `
+          <div class="flex items-center gap-3 p-3 rounded-lg bg-slate-800 border border-slate-700">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-medium text-sm">${c.company}</span>
+                ${statusBadge(c.status)}
+                ${duration ? `<span class="text-xs text-slate-500">${duration}</span>` : ''}
+              </div>
+              <div class="text-xs text-slate-500 mt-0.5">${c.phone_number} · ${started}</div>
+            </div>
+            ${active ? `
+              <button onclick="endCall('${c.id}')"
+                class="text-xs text-red-400 hover:text-red-300 border border-red-800 hover:border-red-600 rounded px-2 py-1 transition-colors shrink-0">
+                End
+              </button>` : ''}
+          </div>`;
+      }).join('');
+    }
+
+    async function endCall(callId) {
+      await fetch(`${API}/calls/${callId}`, { method: 'DELETE' });
+      await loadCalls();
+    }
+
+    // ── Polling ────────────────────────────────────────────────
+    function startPolling() {
+      pollTimer = setInterval(loadCalls, 3000);
+    }
+
+    init();
+  </script>
+</body>
+</html>

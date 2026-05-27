@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Call Monitor</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #0f0f0f;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 24px;
+      padding: 24px;
+    }
+    h1 { font-size: 20px; font-weight: 600; color: #aaa; }
+    #status {
+      font-size: 15px;
+      color: #666;
+      text-align: center;
+    }
+    #status.connected { color: #4ade80; }
+    #status.error { color: #f87171; }
+    #visualizer {
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      background: #1a1a1a;
+      border: 3px solid #333;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 60px;
+      transition: border-color 0.1s, box-shadow 0.1s;
+    }
+    #visualizer.active {
+      border-color: #4ade80;
+      box-shadow: 0 0 30px rgba(74, 222, 128, 0.3);
+    }
+    #end-btn {
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 16px 48px;
+      font-size: 17px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    #end-btn:hover { background: #dc2626; }
+    #end-btn:active { transform: scale(0.97); }
+    #end-btn:disabled { background: #555; cursor: not-allowed; }
+    #log {
+      font-size: 12px;
+      color: #555;
+      font-family: monospace;
+      text-align: center;
+      max-width: 320px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Live Call Monitor</h1>
+  <div id="visualizer">📞</div>
+  <div id="status">Connecting…</div>
+  <button id="start-btn" style="background:#22c55e;color:white;border:none;border-radius:12px;padding:16px 48px;font-size:17px;font-weight:600;cursor:pointer;">▶ Tap to Listen</button>
+  <button id="end-btn" disabled>End Call</button>
+  <div id="log"></div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const callId = params.get('callId') || location.pathname.split('/').pop();
+    const wsBase = location.origin.replace(/^http/, 'ws');
+
+    const statusEl = document.getElementById('status');
+    const visualizer = document.getElementById('visualizer');
+    const endBtn = document.getElementById('end-btn');
+    const startBtn = document.getElementById('start-btn');
+    const logEl = document.getElementById('log');
+    let packetsReceived = 0;
+    let audioStarted = false;
+
+    function log(msg) {
+      logEl.textContent = msg;
+    }
+
+    // --- Audio setup (mulaw 8kHz → PCM → AudioContext) ---
+    const SOURCE_RATE = 8000;
+    let audioCtx = null;
+    let nativeRate = 44100;
+    let nextPlayTime = 0;
+
+    // mulaw decode table
+    const MULAW_TABLE = (() => {
+      const t = new Int16Array(256);
+      for (let i = 0; i < 256; i++) {
+        let u = ~i & 0xFF;
+        const sign = u & 0x80;
+        const exp = (u >> 4) & 0x07;
+        const mantissa = u & 0x0F;
+        let sample = ((mantissa << 1) + 33) << exp;
+        sample -= 33;
+        t[i] = sign ? -sample : sample;
+      }
+      return t;
+    })();
+
+    function decodeMulaw(buffer) {
+      const pcm = new Float32Array(buffer.length);
+      for (let i = 0; i < buffer.length; i++) {
+        pcm[i] = MULAW_TABLE[buffer[i]] / 32768;
+      }
+      return pcm;
+    }
+
+    function playPcm(pcmFloat32) {
+      if (!audioCtx) return;
+      // Upsample from 8kHz to browser native rate (usually 44100/48000)
+      const ratio = nativeRate / SOURCE_RATE;
+      const outLen = Math.ceil(pcmFloat32.length * ratio);
+      const upsampled = new Float32Array(outLen);
+      for (let i = 0; i < outLen; i++) {
+        const pos = i / ratio;
+        const idx = Math.floor(pos);
+        const frac = pos - idx;
+        const s0 = pcmFloat32[idx] ?? 0;
+        const s1 = pcmFloat32[idx + 1] ?? s0;
+        upsampled[i] = s0 + frac * (s1 - s0);
+      }
+      const buf = audioCtx.createBuffer(1, outLen, nativeRate);
+      buf.copyToChannel(upsampled, 0);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      const startAt = Math.max(now, nextPlayTime);
+      src.start(startAt);
+      nextPlayTime = startAt + buf.duration;
+
+      // animate visualizer
+      visualizer.classList.add('active');
+      clearTimeout(visualizer._timer);
+      visualizer._timer = setTimeout(() => visualizer.classList.remove('active'), 200);
+    }
+
+    function initAudio() {
+      if (audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      nativeRate = audioCtx.sampleRate;
+      audioStarted = true;
+      startBtn.style.display = 'none';
+      log(`Audio ready @ ${nativeRate}Hz — packets: ${packetsReceived}`);
+    }
+
+    startBtn.addEventListener('click', initAudio);
+
+    // --- WebSocket ---
+    let ws;
+    function connect() {
+      ws = new WebSocket(`${wsBase}/ws/monitor/${callId}`);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        statusEl.textContent = '🟢 Connected — tap ▶ to start audio';
+        statusEl.className = 'connected';
+        endBtn.disabled = false;
+        log(`callId: ${callId}`);
+      };
+
+      ws.onmessage = (e) => {
+        packetsReceived++;
+        if (!audioStarted) {
+          log(`Receiving audio... (${packetsReceived} packets) — tap ▶ to hear`);
+          return;
+        }
+        const buf = new Uint8Array(e.data);
+        playPcm(decodeMulaw(buf));
+        log(`packets: ${packetsReceived}`);
+      };
+
+      ws.onclose = () => {
+        statusEl.textContent = 'Disconnected';
+        statusEl.className = '';
+        endBtn.disabled = true;
+      };
+
+      ws.onerror = () => {
+        statusEl.textContent = 'Connection error';
+        statusEl.className = 'error';
+      };
+    }
+
+    // --- End call ---
+    endBtn.addEventListener('click', async () => {
+      if (!confirm('End the call?')) return;
+      endBtn.disabled = true;
+      try {
+        const res = await fetch(`/calls/${callId}`, { method: 'DELETE' });
+        if (res.ok) {
+          statusEl.textContent = 'Call ended';
+          log('');
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert('Failed: ' + (err.error || res.status));
+          endBtn.disabled = false;
+        }
+      } catch (e) {
+        alert('Network error');
+        endBtn.disabled = false;
+      }
+    });
+
+    connect();
+  </script>
+</body>
+</html>
