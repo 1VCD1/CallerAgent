@@ -12,8 +12,50 @@ CallerAgent is an AI-powered phone agent that calls customer service numbers on 
 4. Deepgram transcribes the audio; a human detector watches for a live agent
 5. Once a human is detected, you receive a push notification and get bridged into the call via conference
 
+### System Architecture
+
+```mermaid
+graph TD
+    User["Mobile App (Expo)"]
+    Backend["Backend (Fastify / Node.js)"]
+    Twilio["Twilio Voice"]
+    Deepgram["Deepgram STT"]
+    Claude["Claude LLM"]
+    PG["PostgreSQL + pgvector"]
+    Redis["Redis + BullMQ"]
+
+    User -->|"POST /calls"| Backend
+    Backend -->|"Outbound call"| Twilio
+    Twilio -->|"Audio stream (WebSocket)"| Backend
+    Backend -->|"Raw audio chunks"| Deepgram
+    Deepgram -->|"Live transcript"| Backend
+    Backend -->|"Transcript + context"| Claude
+    Claude -->|"Action: DTMF / say / wait"| Backend
+    Backend -->|"TwiML instructions"| Twilio
+    Backend -->|"Store IVR memory patterns"| PG
+    Backend -->|"Job queue"| Redis
+    Backend -->|"Push notification (human detected)"| User
+    User -->|"Bridge join (conference)"| Twilio
 ```
-INIT → DIALING → IVR_NAVIGATION → EXPLORATION → ON_HOLD → HUMAN_DETECTED → USER_NOTIFIED → BRIDGED → ENDED
+
+### Call State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> INIT
+    INIT --> DIALING
+    DIALING --> IVR_NAVIGATION : Call answered
+    DIALING --> FAILED : No answer / error
+    IVR_NAVIGATION --> EXPLORATION : Navigating menus
+    IVR_NAVIGATION --> ON_HOLD : Placed on hold
+    EXPLORATION --> ON_HOLD : Hold music detected
+    ON_HOLD --> HUMAN_DETECTED : Live agent picked up
+    HUMAN_DETECTED --> USER_NOTIFIED : Push notification sent
+    USER_NOTIFIED --> BRIDGED : User joins conference
+    BRIDGED --> ENDED : Call completed
+    IVR_NAVIGATION --> ENDED : Goal met / end_call action
+    FAILED --> [*]
+    ENDED --> [*]
 ```
 
 ---
