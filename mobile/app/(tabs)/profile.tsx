@@ -6,9 +6,9 @@ import { colors } from '@/theme';
 import { getUserId, setUserId, createUser, getUser, updateUser, getApiUrl, setApiUrl, getIvrNotes, IvrNote } from '@/api';
 
 const LANGUAGES = [
-  { code: 'en',    label: 'English',    flag: '🇺🇸' },
-  { code: 'zh-TW', label: '繁體中文',   flag: '🇹🇼' },
-  { code: 'zh-CN', label: '简体中文',   flag: '🇨🇳' },
+  { code: 'en',    label: 'English'  },
+  { code: 'zh-TW', label: '繁體中文' },
+  { code: 'zh-CN', label: '简体中文' },
 ] as const;
 
 export default function ProfileScreen() {
@@ -92,13 +92,12 @@ export default function ProfileScreen() {
 
           <Text style={s.label}>Language / 語言</Text>
           <View style={s.langRow}>
-            {LANGUAGES.map(({ code, label, flag }) => (
+            {LANGUAGES.map(({ code, label }) => (
               <TouchableOpacity
                 key={code}
                 style={[s.langBtn, language === code && s.langBtnActive]}
                 onPress={() => setLanguage(code as any)}
               >
-                <Text style={s.langFlag}>{flag}</Text>
                 <Text style={[s.langLabel, language === code && { color: colors.blue }]}>{label}</Text>
               </TouchableOpacity>
             ))}
@@ -236,8 +235,7 @@ const s = StyleSheet.create({
   langRow:     { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   langBtn:     { flex: 1, minWidth: 90, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 10, alignItems: 'center', gap: 4, backgroundColor: colors.input },
   langBtnActive:{ borderColor: colors.blue, backgroundColor: '#1e3a5f' },
-  langFlag:    { fontSize: 22 },
-  langLabel:   { fontSize: 12, fontWeight: '600', color: colors.subtext },
+  langLabel:   { fontSize: 13, fontWeight: '600', color: colors.subtext },
   noteMeta:      { fontSize: 11, color: colors.muted },
   outcomeBadge:  { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   outcomeTxt:    { fontSize: 12, fontWeight: '700' },
