@@ -260,9 +260,8 @@ export default function CallScreen() {
 
           <Text style={s.label}>IVR Language <Text style={s.labelOpt}>(their phone system)</Text></Text>
           <View style={s.langRow}>
-            {([['en','🇺🇸','English'],['zh-TW','🇹🇼','繁體中文'],['zh-CN','🇨🇳','简体中文']] as const).map(([code, flag, label]) => (
+            {([['en','English'],['zh-TW','繁體中文'],['zh-CN','简体中文']] as const).map(([code, label]) => (
               <TouchableOpacity key={code} style={[s.langBtn, ivrLang === code && s.langBtnActive]} onPress={() => setIvrLang(code)}>
-                <Text style={s.langFlag}>{flag}</Text>
                 <Text style={[s.langLabel, ivrLang === code && { color: colors.blue }]}>{label}</Text>
               </TouchableOpacity>
             ))}
@@ -305,8 +304,7 @@ const s = StyleSheet.create({
   langRow:         { flexDirection: 'row', gap: 8, marginBottom: 12 },
   langBtn:         { flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 8, alignItems: 'center', gap: 2, backgroundColor: colors.input },
   langBtnActive:   { borderColor: colors.blue, backgroundColor: '#1e3a5f' },
-  langFlag:        { fontSize: 18 },
-  langLabel:       { fontSize: 10, fontWeight: '600', color: colors.subtext },
+  langLabel:       { fontSize: 13, fontWeight: '600', color: colors.subtext },
   info:              { flexDirection: 'row', gap: 8, alignItems: 'flex-start', backgroundColor: colors.card, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
   infoTxt:           { flex: 1, fontSize: 12, color: colors.subtext, lineHeight: 18 },
   recentWrap:        { marginBottom: 14 },
