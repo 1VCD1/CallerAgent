@@ -41,12 +41,15 @@ async function registerPushToken(userId: string) {
   await updateUser(userId, { pushToken: token });
 }
 
+const DEV_SKIP_AUTH = __DEV__;
+
 function useProtectedRoute(user: User | null | undefined) {
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
-    if (user === undefined) return; // still loading
+    if (DEV_SKIP_AUTH) return; // bypass auth in Expo Go for UI development
+    if (user === undefined) return;
     const inSignIn = segments[0] === 'sign-in';
     if (!user && !inSignIn) {
       router.replace('/sign-in');
@@ -79,7 +82,7 @@ export default function RootLayout() {
 
   useProtectedRoute(user);
 
-  if (user === undefined) {
+  if (!DEV_SKIP_AUTH && user === undefined) {
     return (
       <View style={{ flex: 1, backgroundColor: '#020617', alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color="#3b82f6" size="large" />
