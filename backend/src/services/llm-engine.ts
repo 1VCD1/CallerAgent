@@ -114,7 +114,7 @@ ${ctx.userInfo.birthday ? `  Date of birth: ${ctx.userInfo.birthday}` : ''}`.tri
   const consistencyWarning = ctx.speakerChanged
     ? `🔔 SPEAKER CHANGE DETECTED: Deepgram's audio diarization has detected a NEW VOICE on the line. This is a strong signal that a human agent has joined the call. Set is_human=true with high confidence.`
     : avgPastConfidence !== null && avgPastConfidence < 0.2
-    ? `⚠️  VOICE CONSISTENCY WARNING: The last ${ctx.recentHumanConfidences!.length - 1} turns all had low human confidence (avg ${Math.round(avgPastConfidence * 100)}%). The voice and rhythm have been consistent — almost certainly the same IVR. Do NOT flag as human unless there is a clear speaker change.`
+    ? `📋 VOICE HISTORY NOTE: Previous ${ctx.recentHumanConfidences!.length - 1} turns had low human confidence (avg ${Math.round(avgPastConfidence * 100)}%) — normal for IVR navigation. This does NOT prevent escalation. If the current utterance contains ANY human signal (name introduction, "who's calling?", "can you hear me?", confusion, disfluencies), escalate immediately.`
     : '';
 
   const menuKeysBlock = ctx.availableMenuKeys && ctx.availableMenuKeys.length > 0

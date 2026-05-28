@@ -144,7 +144,7 @@ export default function CallDetailScreen() {
           {call.wait_duration_seconds != null && (
             <StatCell label="Wait time" value={`${call.wait_duration_seconds}s`} />
           )}
-          {call.human_confidence != null && (
+          {!!call.human_confidence && (
             <StatCell label="Confidence" value={`${Math.round(call.human_confidence * 100)}%`} />
           )}
         </View>
@@ -167,7 +167,7 @@ export default function CallDetailScreen() {
             ) : (
               <View style={{ paddingTop: 8, gap: 8 }}>
                 {transcripts.map((t, i) => {
-                  const pct        = t.human_confidence != null ? Math.round(t.human_confidence * 100) : null;
+                  const pct        = t.human_confidence ? Math.round(t.human_confidence * 100) : null;
                   const isAI       = t.speaker === 'AI';
                   const isHumanSpk = t.speaker === 'HUMAN';
                   return (

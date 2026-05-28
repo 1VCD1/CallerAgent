@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, ActivityIndicator, Alert, Animated, Image,
 } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,48 +23,66 @@ interface CallTemplate {
 
 // ─── Dynamic Orb ─────────────────────────────────────────────────────────────
 
-type OrbState = 'idle' | 'active' | 'human';
+type OrbState = 'idle' | 'dialing' | 'navigating' | 'waiting' | 'human';
 
-function DynamicOrb({ orbState }: { orbState: OrbState }) {
+const ORB_CFG: Record<OrbState, {
+  c: [string, string, string];
+  dur: number; oMin: number; oMax: number; scale: number;
+}> = {
+  idle:      { c: ['#60a5fa', '#818cf8', '#a78bfa'], dur: 2200, oMin: 0.15, oMax: 0.50, scale: 1.04 },
+  dialing:   { c: ['#60a5fa', '#3b82f6', '#2563eb'], dur: 1400, oMin: 0.20, oMax: 0.70, scale: 1.06 },
+  navigating:{ c: ['#818cf8', '#a78bfa', '#c084fc'], dur: 800,  oMin: 0.30, oMax: 0.95, scale: 1.08 },
+  waiting:   { c: ['#fbbf24', '#f59e0b', '#d97706'], dur: 3000, oMin: 0.10, oMax: 0.38, scale: 1.03 },
+  human:     { c: ['#25D366', '#22c55e', '#16a34a'], dur: 550,  oMin: 0.35, oMax: 1.00, scale: 1.08 },
+};
+
+function DynamicOrb({ orbState, speakingTick = 0 }: { orbState: OrbState; speakingTick?: number }) {
   const breathe      = useRef(new Animated.Value(1)).current;
   const outerOpacity = useRef(new Animated.Value(0.35)).current;
+  const burstScale   = useRef(new Animated.Value(1)).current;
+  const burstOpacity = useRef(new Animated.Value(0)).current;
 
-  const isHuman  = orbState === 'human';
-  const isActive = orbState === 'active';
-  const dur = isActive ? 800 : 2200;
-
-  const gradColors: [string, string, string] = isHuman
-    ? ['#25D366', '#22c55e', '#16a34a']
-    : ['#60a5fa', '#818cf8', '#a78bfa'];  // blue → violet
+  const cfg = ORB_CFG[orbState];
 
   useEffect(() => {
     const b = Animated.loop(Animated.sequence([
-      Animated.timing(breathe,      { toValue: 1.07, duration: dur,       useNativeDriver: true }),
-      Animated.timing(breathe,      { toValue: 1,    duration: dur,       useNativeDriver: true }),
+      Animated.timing(breathe,      { toValue: cfg.scale, duration: cfg.dur,        useNativeDriver: true }),
+      Animated.timing(breathe,      { toValue: 1,         duration: cfg.dur,        useNativeDriver: true }),
     ]));
     const o = Animated.loop(Animated.sequence([
-      Animated.timing(outerOpacity, { toValue: 0.9,  duration: dur * 1.5, useNativeDriver: true }),
-      Animated.timing(outerOpacity, { toValue: 0.15, duration: dur * 1.5, useNativeDriver: true }),
+      Animated.timing(outerOpacity, { toValue: cfg.oMax,  duration: cfg.dur * 1.4,  useNativeDriver: true }),
+      Animated.timing(outerOpacity, { toValue: cfg.oMin,  duration: cfg.dur * 1.4,  useNativeDriver: true }),
     ]));
     b.start(); o.start();
     return () => { b.stop(); o.stop(); };
   }, [orbState]);
 
+  useEffect(() => {
+    if (speakingTick === 0) return;
+    burstScale.setValue(1);
+    burstOpacity.setValue(0.75);
+    Animated.parallel([
+      Animated.timing(burstScale,   { toValue: 2.1, duration: 750, useNativeDriver: true }),
+      Animated.timing(burstOpacity, { toValue: 0,   duration: 750, useNativeDriver: true }),
+    ]).start();
+  }, [speakingTick]);
+
+  const { c: gradColors } = cfg;
+
   return (
     <View style={orb.wrap}>
+      {/* Voice-activity burst ring */}
+      <Animated.View style={[orb.ringBurst, {
+        borderColor: gradColors[0], opacity: burstOpacity, transform: [{ scale: burstScale }],
+      }]} />
       {/* Outer faint ring — pulses opacity */}
       <Animated.View style={[orb.ringOuter, { borderColor: gradColors[0], opacity: outerOpacity }]} />
       {/* Mid ring — breathes scale */}
       <Animated.View style={[orb.ringMid, { borderColor: gradColors[0] + '60', transform: [{ scale: breathe }] }]} />
-      {/* Inner gradient ring: LinearGradient shell + dark cutout centre */}
-      <LinearGradient
-        colors={gradColors}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={orb.ringGradient}
-      >
+      {/* Inner gradient ring */}
+      <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={orb.ringGradient}>
         <View style={orb.ringCutout}>
-          {isHuman
+          {orbState === 'human'
             ? <Ionicons name="person" size={36} color={gradColors[0]} />
             : <Image source={require('../../assets/Logo_transparent.png')} style={orb.appIcon} />
           }
@@ -75,6 +94,7 @@ function DynamicOrb({ orbState }: { orbState: OrbState }) {
 
 const orb = StyleSheet.create({
   wrap:        { width: 210, height: 210, alignItems: 'center', justifyContent: 'center' },
+  ringBurst:   { position: 'absolute', width: 204, height: 204, borderRadius: 102, borderWidth: 2 },
   ringOuter:   { position: 'absolute', width: 204, height: 204, borderRadius: 102, borderWidth: 1 },
   ringMid:     { position: 'absolute', width: 170, height: 170, borderRadius: 85,  borderWidth: 1.5 },
   ringGradient:{ width: 136, height: 136, borderRadius: 68, alignItems: 'center', justifyContent: 'center' },
@@ -83,6 +103,21 @@ const orb = StyleSheet.create({
 });
 
 // ─── Active Call Screen ───────────────────────────────────────────────────────
+
+function getOrbState(status: string): OrbState {
+  if (['HUMAN_DETECTED', 'USER_NOTIFIED', 'BRIDGED'].includes(status)) return 'human';
+  if (status === 'ON_HOLD')                                             return 'waiting';
+  if (['IVR_NAVIGATION', 'EXPLORATION'].includes(status))              return 'navigating';
+  if (['INIT', 'DIALING'].includes(status))                            return 'dialing';
+  return 'navigating';
+}
+
+const STEPS: { key: OrbState; label: string; color: string }[] = [
+  { key: 'dialing',    label: 'Dialing',    color: '#3b82f6' },
+  { key: 'navigating', label: 'Navigating', color: '#a78bfa' },
+  { key: 'waiting',    label: 'On Hold',    color: '#f59e0b' },
+  { key: 'human',      label: 'Human!',     color: '#25D366' },
+];
 
 interface ActiveCallViewProps {
   call: Call;
@@ -94,49 +129,80 @@ interface ActiveCallViewProps {
   onEnd: () => void;
 }
 
-function ActiveCallView({ call, cfg, isHuman, isActive, confidence, transcripts, onEnd }: ActiveCallViewProps) {
+function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: ActiveCallViewProps) {
   const [showTranscript, setShowTranscript] = useState(false);
-  const orbState: OrbState = isHuman ? 'human' : isActive ? 'active' : 'idle';
+  const orbState     = getOrbState(call.status);
+  const prevLen      = useRef(0);
+  const transcriptRef = useRef<ScrollView>(null);
+  const [speakingTick, setSpeakingTick] = useState(0);
+
+  useEffect(() => {
+    if (transcripts.length > prevLen.current) {
+      prevLen.current = transcripts.length;
+      setSpeakingTick(t => t + 1);
+    }
+  }, [transcripts.length]);
+
+  const stepIdx = STEPS.findIndex(st => st.key === orbState);
+  const activeStep = STEPS[stepIdx] ?? STEPS[0];
 
   return (
     <SafeAreaView style={s.callScreen}>
-      {/* Header */}
+      {/* Header — company name + End button only */}
       <View style={s.callHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.callHeaderTitle} numberOfLines={1}>Talking to {call.company}</Text>
-          <Text style={s.callHeaderSub} numberOfLines={2}>{cfg.label}</Text>
-        </View>
+        <Text style={s.callHeaderTitle} numberOfLines={1}>{call.company}</Text>
         <TouchableOpacity style={s.callEndBtnSmall} onPress={onEnd} activeOpacity={0.8}>
           <Ionicons name="call" size={14} color="#fff" />
           <Text style={s.callEndBtnSmallTxt}>End</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Center: Orb + status text + transcript */}
-      <View style={s.callCenter}>
-        <DynamicOrb orbState={orbState} />
+      {/* Center: Orb + status block + transcript */}
+      <View style={[s.callCenter, showTranscript && { justifyContent: 'flex-start' }]}>
+        <View style={[s.callOrbBlock, showTranscript && { paddingTop: 12, paddingBottom: 4 }]}>
+        <DynamicOrb orbState={orbState} speakingTick={speakingTick} />
 
         {isHuman ? (
           <View style={s.callHumanTextBlock}>
             <Text style={s.callHumanTitle}>Human found.</Text>
             <Text style={s.callHumanSub}>Keep your phone nearby</Text>
           </View>
-        ) : confidence > 0 ? (
-          <View style={s.callConfBlock}>
-            <Text style={s.callConfHint}>Sounds like a real representative</Text>
-            <View style={s.callConfRow}>
-              <View style={s.callConfTrack}>
-                <View style={[s.callConfFill, {
-                  width: `${Math.round(confidence * 100)}%` as any,
-                  backgroundColor: confidence > 0.6 ? colors.green : confidence > 0.3 ? colors.yellow : colors.muted,
-                }]} />
-              </View>
-              <Text style={[s.callConfPct, {
-                color: confidence > 0.6 ? colors.green : confidence > 0.3 ? colors.yellow : colors.muted,
-              }]}>{Math.round(confidence * 100)}%</Text>
+        ) : (
+          <View style={s.callStatusBlock}>
+            <Text style={[s.callStatusLabel, { color: activeStep.color }]}>{cfg.label}</Text>
+            {/* Step progress dots */}
+            <View style={s.stepRow}>
+              {STEPS.map((st, i) => (
+                <View
+                  key={st.key}
+                  style={[
+                    s.stepDot,
+                    i < stepIdx  && s.stepDotDone,
+                    i === stepIdx && { backgroundColor: activeStep.color, width: 22, borderRadius: 4 },
+                  ]}
+                />
+              ))}
             </View>
+            {/* Confidence bar (shown when AI detects a possible human) */}
+            {confidence > 0 && (
+              <View style={s.callConfBlock}>
+                <Text style={s.callConfHint}>Sounds like a real person…</Text>
+                <View style={s.callConfRow}>
+                  <View style={s.callConfTrack}>
+                    <View style={[s.callConfFill, {
+                      width: `${Math.round(confidence * 100)}%` as any,
+                      backgroundColor: confidence > 0.6 ? colors.green : confidence > 0.3 ? colors.yellow : colors.muted,
+                    }]} />
+                  </View>
+                  <Text style={[s.callConfPct, {
+                    color: confidence > 0.6 ? colors.green : confidence > 0.3 ? colors.yellow : colors.muted,
+                  }]}>{Math.round(confidence * 100)}%</Text>
+                </View>
+              </View>
+            )}
           </View>
-        ) : null}
+        )}
+        </View>{/* end callOrbBlock */}
 
         {/* Transcript toggle */}
         <TouchableOpacity style={s.transcriptToggle} onPress={() => setShowTranscript(v => !v)}>
@@ -151,12 +217,17 @@ function ActiveCallView({ call, cfg, isHuman, isActive, confidence, transcripts,
         </TouchableOpacity>
 
         {showTranscript && (
-          <ScrollView style={s.transcriptList} contentContainerStyle={{ padding: 12, paddingTop: 8 }}>
+          <ScrollView
+            ref={transcriptRef}
+            style={s.transcriptList}
+            contentContainerStyle={{ padding: 12, paddingTop: 8 }}
+            onContentSizeChange={() => transcriptRef.current?.scrollToEnd({ animated: true })}
+          >
             {transcripts.length === 0 ? (
               <Text style={s.transcriptEmpty}>Waiting for IVR to speak…</Text>
             ) : (
-              transcripts.slice(-12).map((t, i) => {
-                const isAI      = t.speaker === 'AI';
+              transcripts.map((t, i) => {
+                const isAI       = t.speaker === 'AI';
                 const isHumanSpk = t.speaker === 'HUMAN';
                 return (
                   <View key={t.id ?? i} style={[s.chatRow, isAI ? s.chatRowRight : s.chatRowLeft]}>
@@ -282,12 +353,11 @@ export default function CallScreen() {
   // ── Active call — render full screen ──
   if (activeCall) {
     const call = activeCall;
-    const cfg  = STATUS[call.status] ?? STATUS['ENDED'];
-    const isHuman  = ['HUMAN_DETECTED', 'USER_NOTIFIED', 'BRIDGED'].includes(call.status);
-    const isActive = ACTIVE_STATUSES.includes(call.status) && !isHuman;
+    const cfg     = STATUS[call.status] ?? STATUS['ENDED'];
+    const isHuman = ['HUMAN_DETECTED', 'USER_NOTIFIED', 'BRIDGED'].includes(call.status);
     return (
       <ActiveCallView
-        call={call} cfg={cfg} isHuman={isHuman} isActive={isActive}
+        call={call} cfg={cfg} isHuman={isHuman} isActive={false}
         confidence={call.human_confidence ?? 0}
         transcripts={call.transcripts ?? []}
         onEnd={() => endCall(call.id).then(refresh)}
@@ -298,7 +368,12 @@ export default function CallScreen() {
   // ── Home screen ──
   return (
     <SafeAreaView style={s.safe}>
-      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView
+        contentContainerStyle={s.scroll}
+        keyboardShouldPersistTaps="handled"
+        extraScrollHeight={120}
+        enableOnAndroid
+      >
 
         {/* Hero — left-aligned */}
         <View style={s.heroBlock}>
@@ -389,7 +464,7 @@ export default function CallScreen() {
             </ScrollView>
           </View>
         )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }
@@ -439,20 +514,25 @@ const s = StyleSheet.create({
   // ── Active call ──
   callScreen:  { flex: 1, backgroundColor: '#060c18' },
 
-  callHeader:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 22, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(30,41,59,0.6)' },
-  callHeaderTitle: { fontSize: 20, fontWeight: '800', color: colors.text },
-  callHeaderSub:   { fontSize: 13, color: colors.subtext, marginTop: 3, lineHeight: 18 },
-  callActiveDot:   { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
-  callActiveDotInner: { width: 10, height: 10, borderRadius: 5 },
+  callHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(30,41,59,0.6)' },
+  callHeaderTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
 
   callCenter:  { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 16 },
+  callOrbBlock:{ alignItems: 'center' },
 
   callHumanTextBlock: { alignItems: 'center', marginTop: 24 },
   callHumanTitle:     { fontSize: 36, fontWeight: '800', color: colors.green, letterSpacing: -0.5 },
   callHumanSub:       { fontSize: 15, color: 'rgba(37,211,102,0.6)', marginTop: 6 },
 
-  callConfBlock: { alignItems: 'center', marginTop: 20, width: '75%' },
-  callConfHint:  { fontSize: 13, color: colors.subtext, marginBottom: 10, textAlign: 'center' },
+  // Status block below orb
+  callStatusBlock: { alignItems: 'center', marginTop: 20, marginBottom: 4 },
+  callStatusLabel: { fontSize: 17, fontWeight: '700', textAlign: 'center', marginBottom: 14, letterSpacing: 0.1 },
+  stepRow:         { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stepDot:         { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.12)' },
+  stepDotDone:     { backgroundColor: 'rgba(255,255,255,0.30)' },
+
+  callConfBlock: { alignItems: 'center', marginTop: 16, width: '75%' },
+  callConfHint:  { fontSize: 12, color: colors.subtext, marginBottom: 8, textAlign: 'center' },
   callConfRow:   { flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%' },
   callConfTrack: { flex: 1, height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden' },
   callConfFill:  { height: 4, borderRadius: 2 },
@@ -468,7 +548,7 @@ const s = StyleSheet.create({
   transcriptToggleTxt: { fontSize: 13, fontWeight: '600', color: colors.subtext },
   transcriptBadge:     { backgroundColor: colors.border, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
   transcriptBadgeTxt:  { fontSize: 10, fontWeight: '700', color: colors.muted },
-  transcriptList:      { maxHeight: 220, marginBottom: 8 },
+  transcriptList:      { flex: 1 },
   transcriptEmpty:     { color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 16 },
 
   // Chat bubble layout
