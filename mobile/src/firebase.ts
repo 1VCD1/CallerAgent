@@ -12,41 +12,26 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 //   Firebase Console → Project Settings → Your apps → Web app → Config snippet
 // ─────────────────────────────────────────────────────────────────────────────
 const FIREBASE_CONFIG = {
-  apiKey:            'REPLACE_WITH_YOUR_API_KEY',
-  authDomain:        'REPLACE_WITH_YOUR_PROJECT.firebaseapp.com',
-  projectId:         'REPLACE_WITH_YOUR_PROJECT_ID',
-  storageBucket:     'REPLACE_WITH_YOUR_PROJECT.appspot.com',
-  messagingSenderId: 'REPLACE_WITH_YOUR_SENDER_ID',
-  appId:             'REPLACE_WITH_YOUR_APP_ID',
+  apiKey:            'AIzaSyA0byiMMCmWkn6RENy__8dS677RrqvTagc',
+  authDomain:        'calleragent-f880c.firebaseapp.com',
+  projectId:         'calleragent-f880c',
+  storageBucket:     'calleragent-f880c.firebasestorage.app',
+  messagingSenderId: '765448201002',
+  appId:             '1:765448201002:web:a40f1c7711ebaa1c68f453',
 };
 
 // Google Sign-In → Firebase Console → Authentication → Sign-in method → Google
 // → Web SDK configuration → Web client ID
-export const GOOGLE_WEB_CLIENT_ID = 'REPLACE_WITH_YOUR_WEB_CLIENT_ID.apps.googleusercontent.com';
+export const GOOGLE_WEB_CLIENT_ID = '765448201002-0uedn3mq2a25itdqo25s5janpmtdrbkq.apps.googleusercontent.com';
 
-// Custom AsyncStorage persistence (getReactNativePersistence was removed in Firebase v12)
-const asyncStoragePersistence = {
-  type: 'LOCAL',
-  async _isAvailable() { return true; },
-  async _set(key: string, value: unknown) {
-    await AsyncStorage.setItem(key, JSON.stringify(value));
-  },
-  async _get(key: string) {
-    const str = await AsyncStorage.getItem(key);
-    if (str === null) return null;
-    try { return JSON.parse(str); } catch { return null; }
-  },
-  async _remove(key: string) {
-    await AsyncStorage.removeItem(key);
-  },
-  _addListener() {},
-  _removeListener() {},
-};
+// getReactNativePersistence exists in the RN Metro bundle (dist/rn/) but is absent
+// from the Node/TypeScript type declarations — require() bypasses the type check
+const { getReactNativePersistence } = require('firebase/auth');
 
 const app = getApps().length === 0 ? initializeApp(FIREBASE_CONFIG) : getApps()[0];
 
 export const auth = initializeAuth(app, {
-  persistence: asyncStoragePersistence as any,
+  persistence: getReactNativePersistence(AsyncStorage),
 });
 
 /** Subscribe to auth state changes. Returns unsubscribe function. */
