@@ -218,6 +218,60 @@ async function bootstrap() {
 
   fastify.get('/dashboard', async (_request, reply) => reply.redirect('/dashboard.html'));
 
+  fastify.get('/privacy', async (_request, reply) => {
+    reply.type('text/html').send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CallerAgent – Privacy Policy</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 720px; margin: 60px auto; padding: 0 24px; color: #1a1a1a; line-height: 1.7; }
+    h1 { font-size: 28px; margin-bottom: 8px; }
+    h2 { font-size: 18px; margin-top: 36px; }
+    p, li { font-size: 15px; color: #333; }
+    a { color: #3b82f6; }
+    .updated { color: #888; font-size: 13px; margin-bottom: 40px; }
+  </style>
+</head>
+<body>
+  <h1>CallerAgent Privacy Policy</h1>
+  <p class="updated">Last updated: May 27, 2026</p>
+  <p>CallerAgent ("we", "our", or "us") is committed to protecting your privacy. This policy explains how we collect, use, and safeguard your information when you use the CallerAgent mobile application.</p>
+  <h2>Information We Collect</h2>
+  <ul>
+    <li><strong>Account information:</strong> When you sign in with Google, we receive your name and email address.</li>
+    <li><strong>Call data:</strong> We store records of calls you initiate, including the company name, phone number, goal, and call transcripts.</li>
+    <li><strong>Device token:</strong> We collect your device's push notification token to notify you when a live representative is reached.</li>
+    <li><strong>Personal information:</strong> Information you optionally provide in your profile (callback phone number, date of birth) used to assist the AI during calls.</li>
+  </ul>
+  <h2>How We Use Your Information</h2>
+  <ul>
+    <li>To authenticate you and provide access to the service.</li>
+    <li>To navigate automated phone systems (IVR) on your behalf.</li>
+    <li>To send you push notifications about your active calls.</li>
+    <li>To improve the AI's ability to navigate phone systems over time.</li>
+  </ul>
+  <h2>Data Sharing</h2>
+  <p>We do not sell or share your personal information with third parties, except as required to operate the service:</p>
+  <ul>
+    <li><strong>Twilio:</strong> Used to place phone calls on your behalf.</li>
+    <li><strong>Deepgram:</strong> Used for real-time speech transcription during calls.</li>
+    <li><strong>OpenAI:</strong> Used to power AI decision-making during calls.</li>
+    <li><strong>Firebase (Google):</strong> Used for authentication and push notifications.</li>
+  </ul>
+  <h2>Data Retention</h2>
+  <p>Call records and transcripts are retained to improve service quality. You may request deletion of your data by contacting us.</p>
+  <h2>Security</h2>
+  <p>We use industry-standard security measures to protect your data. All communication is encrypted via HTTPS.</p>
+  <h2>Children's Privacy</h2>
+  <p>CallerAgent is not intended for users under the age of 13.</p>
+  <h2>Contact Us</h2>
+  <p>Questions? Contact us at: <a href="mailto:toulio84@gmail.com">toulio84@gmail.com</a></p>
+</body>
+</html>`);
+  });
+
   // Redirect to monitor page for the current active call
   fastify.get('/monitor/active', async (request, reply) => {
     const { query: dbQuery } = await import('./db/client');
