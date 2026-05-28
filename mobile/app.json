@@ -12,6 +12,7 @@
       "bundleIdentifier": "com.calleragent.app"
     },
     "android": {
+      "package": "com.calleragent.app",
       "adaptiveIcon": {
         "backgroundColor": "#020617"
       },
@@ -28,10 +29,17 @@
           "color": "#3b82f6"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "98578b4b-1e9a-47cf-b2c2-912152c218ee"
+      }
     }
   }
 }
