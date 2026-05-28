@@ -15,7 +15,8 @@ export default function SignInScreen() {
     webClientId: GOOGLE_WEB_CLIENT_ID,
     iosClientId: '765448201002-7vn8b02k4ph1qiouv7l88tr8kc4lpcab.apps.googleusercontent.com',
     androidClientId: '765448201002-al748nhq23aqq7qjhqvhdqahqisabpom.apps.googleusercontent.com',
-  });
+    prompt: 'select_account',
+  } as any);
 
 
   useEffect(() => {
@@ -43,7 +44,7 @@ export default function SignInScreen() {
 
         <TouchableOpacity
           style={[s.googleBtn, (!request || loading) && s.disabled]}
-          onPress={() => promptAsync({ prompt: 'select_account' } as any)}
+          onPress={() => promptAsync()}
           disabled={!request || loading}
         >
           {loading
