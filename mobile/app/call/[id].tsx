@@ -32,6 +32,7 @@ export default function CallDetailScreen() {
   const [loading, setLoading]     = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
 
   useEffect(() => {
@@ -101,12 +102,27 @@ export default function CallDetailScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.text} />
           <Text style={s.backTxt}>Sessions</Text>
         </TouchableOpacity>
+        {call.human_reached ? (
+          <View style={s.outcomePillGreen}>
+            <Ionicons name="checkmark-circle" size={11} color={colors.green} />
+            <Text style={s.outcomePillGreenTxt}>Human reached</Text>
+          </View>
+        ) : call.status === 'FAILED' ? (
+          <View style={s.outcomePillRed}>
+            <Text style={s.outcomePillRedTxt}>Failed</Text>
+          </View>
+        ) : call.ended_at ? (
+          <View style={s.outcomePillNeutral}>
+            <Text style={s.outcomePillNeutralTxt}>No human</Text>
+          </View>
+        ) : null}
       </View>
 
       <ScrollView contentContainerStyle={s.scroll}>
 
         {/* Header */}
         <Text style={s.company}>{call.company}</Text>
+        {call.goal ? <Text style={s.goal}>{call.goal}</Text> : null}
         <Text style={s.phone}>{call.phone_number}</Text>
 
         <View style={s.badges}>
@@ -133,7 +149,57 @@ export default function CallDetailScreen() {
           )}
         </View>
 
-        {/* Recording */}
+        {/* Transcript */}
+        <View style={s.transcriptCard}>
+          <TouchableOpacity style={s.sectionRow} onPress={() => setShowTranscript(v => !v)} activeOpacity={0.7}>
+            <Text style={s.sectionTitle}>TRANSCRIPT</Text>
+            <View style={s.sectionRight}>
+              <Text style={s.sectionCount}>{transcripts.length} lines</Text>
+              <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={14} color={colors.muted} />
+            </View>
+          </TouchableOpacity>
+
+          {showTranscript && (
+            transcripts.length === 0 ? (
+              <View style={s.empty}>
+                <Text style={s.emptyTxt}>No transcript recorded</Text>
+              </View>
+            ) : (
+              <View style={{ paddingTop: 8, gap: 8 }}>
+                {transcripts.map((t, i) => {
+                  const pct        = t.human_confidence != null ? Math.round(t.human_confidence * 100) : null;
+                  const isAI       = t.speaker === 'AI';
+                  const isHumanSpk = t.speaker === 'HUMAN';
+                  return (
+                    <View key={t.id ?? i} style={[s.chatRow, isAI ? s.chatRowRight : s.chatRowLeft]}>
+                      <View style={[s.chatBubble, isAI ? s.chatBubbleAI : isHumanSpk ? s.chatBubbleHuman : s.chatBubbleIVR]}>
+                        <View style={s.chatMeta}>
+                          <Text style={[s.chatSpeaker, { color: isAI ? colors.blue : isHumanSpk ? colors.green : colors.muted }]}>
+                            {t.speaker}
+                          </Text>
+                          <Text style={s.chatTime}>{formatTime(t.timestamp)}</Text>
+                        </View>
+                        <Text style={[s.chatText, isAI && { color: '#93c5fd' }]}>{t.text}</Text>
+                        {pct != null && (
+                          <View style={s.confRow}>
+                            <View style={[s.confDot, {
+                              backgroundColor: pct > 60 ? colors.green : pct > 30 ? colors.yellow : colors.muted,
+                            }]} />
+                            <Text style={[s.confTxt, {
+                              color: pct > 60 ? colors.green : pct > 30 ? colors.yellow : colors.muted,
+                            }]}>{pct}% human confidence</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )
+          )}
+        </View>
+
+        {/* Recording — bottom */}
         {call.recording_url && (
           <TouchableOpacity style={s.recordingBar} onPress={togglePlayback} disabled={audioLoading}>
             {audioLoading
@@ -146,55 +212,6 @@ export default function CallDetailScreen() {
             </View>
             <Ionicons name="musical-notes-outline" size={16} color={colors.muted} />
           </TouchableOpacity>
-        )}
-
-        {/* Transcript */}
-        <View style={s.sectionRow}>
-          <Text style={s.sectionTitle}>TRANSCRIPT</Text>
-          <Text style={s.sectionCount}>{transcripts.length} lines</Text>
-        </View>
-
-        {transcripts.length === 0 ? (
-          <View style={s.empty}>
-            <Text style={s.emptyTxt}>No transcript recorded</Text>
-          </View>
-        ) : (
-          <View style={s.timeline}>
-            {transcripts.map((t, i) => {
-              const pct       = t.human_confidence != null ? Math.round(t.human_confidence * 100) : null;
-              const isAI      = t.speaker === 'AI';
-              const isHuman   = t.speaker === 'HUMAN';
-              const isLast    = i === transcripts.length - 1;
-              const dotColor  = isAI ? colors.blue : isHuman ? colors.green : colors.muted;
-              return (
-                <View key={t.id ?? i} style={s.timelineRow}>
-                  {/* Left: dot + line */}
-                  <View style={s.timelineLeft}>
-                    <View style={[s.dot, { backgroundColor: dotColor }]} />
-                    {!isLast && <View style={s.connector} />}
-                  </View>
-                  {/* Right: bubble */}
-                  <View style={[s.bubble, isAI && s.bubbleAI, { marginBottom: isLast ? 0 : 12 }]}>
-                    <View style={s.bubbleMeta}>
-                      <Text style={[s.speaker, { color: dotColor }]}>{t.speaker}</Text>
-                      <Text style={s.lineTime}>{formatTime(t.timestamp)}</Text>
-                    </View>
-                    <Text style={s.lineText}>{t.text}</Text>
-                    {pct != null && (
-                      <View style={s.confRow}>
-                        <View style={[s.confDot, {
-                          backgroundColor: pct > 60 ? colors.green : pct > 30 ? colors.yellow : colors.muted,
-                        }]} />
-                        <Text style={[s.confTxt, {
-                          color: pct > 60 ? colors.green : pct > 30 ? colors.yellow : colors.muted,
-                        }]}>{pct}% human confidence</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -212,13 +229,21 @@ function StatCell({ label, value }: { label: string; value: string }) {
 
 const s = StyleSheet.create({
   safe:     { flex: 1, backgroundColor: colors.bg },
-  topBar:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+  topBar:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
   backTxt:  { fontSize: 16, color: colors.text },
+
+  outcomePillGreen:    { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(37,211,102,0.12)', borderWidth: 1, borderColor: 'rgba(37,211,102,0.25)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 },
+  outcomePillGreenTxt: { fontSize: 12, color: colors.green, fontWeight: '600' },
+  outcomePillRed:      { backgroundColor: 'rgba(239,68,68,0.10)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 },
+  outcomePillRedTxt:   { fontSize: 12, color: colors.red, fontWeight: '600' },
+  outcomePillNeutral:    { backgroundColor: 'rgba(100,116,139,0.10)', borderWidth: 1, borderColor: 'rgba(100,116,139,0.25)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 },
+  outcomePillNeutralTxt: { fontSize: 12, color: colors.muted, fontWeight: '600' },
   scroll:   { padding: 20, paddingBottom: 56 },
 
-  company:  { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: 3 },
-  phone:    { fontSize: 14, color: colors.subtext, marginBottom: 14 },
+  company:  { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: 4 },
+  goal:     { fontSize: 14, color: colors.subtext, marginBottom: 4 },
+  phone:    { fontSize: 13, color: colors.muted, marginBottom: 14 },
 
   badges:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
   badge:    { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
@@ -231,29 +256,30 @@ const s = StyleSheet.create({
   statLabel:  { fontSize: 10, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   statValue:  { fontSize: 15, fontWeight: '700', color: colors.text },
 
-  recordingBar:     { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 24 },
+  recordingBar:     { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: 24 },
   recordingTitle:   { fontSize: 14, fontWeight: '600', color: colors.text },
   recordingSubtitle:{ fontSize: 12, color: colors.muted, marginTop: 2 },
 
-  sectionRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  transcriptCard: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 16 },
+  sectionRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 2 },
   sectionTitle: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1 },
+  sectionRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionCount: { fontSize: 12, color: colors.muted },
 
   empty:    { padding: 28, alignItems: 'center' },
   emptyTxt: { color: colors.muted, fontSize: 14 },
 
-  timeline:     { paddingBottom: 8 },
-  timelineRow:  { flexDirection: 'row', gap: 12 },
-  timelineLeft: { alignItems: 'center', width: 16 },
-  dot:          { width: 10, height: 10, borderRadius: 5, marginTop: 12 },
-  connector:    { flex: 1, width: 2, backgroundColor: colors.border, marginTop: 4 },
-
-  bubble:     { flex: 1, backgroundColor: colors.card, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: colors.border },
-  bubbleAI:   { backgroundColor: '#0f1f35', borderColor: '#1e3a5f' },
-  bubbleMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  speaker:    { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
-  lineTime:   { fontSize: 10, color: colors.muted },
-  lineText:   { fontSize: 13, color: colors.text, lineHeight: 20 },
+  chatRow:         { flexDirection: 'row' },
+  chatRowLeft:     { justifyContent: 'flex-start' },
+  chatRowRight:    { justifyContent: 'flex-end' },
+  chatBubble:      { maxWidth: '78%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
+  chatBubbleIVR:   { backgroundColor: '#1e293b', borderTopLeftRadius: 4 },
+  chatBubbleHuman: { backgroundColor: '#052e16', borderTopLeftRadius: 4 },
+  chatBubbleAI:    { backgroundColor: '#0c1a2e', borderTopRightRadius: 4 },
+  chatMeta:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 },
+  chatSpeaker:     { fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
+  chatTime:        { fontSize: 9, color: colors.muted },
+  chatText:        { fontSize: 13, color: colors.text, lineHeight: 19 },
   confRow:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
   confDot:    { width: 5, height: 5, borderRadius: 3 },
   confTxt:    { fontSize: 10, fontWeight: '600' },

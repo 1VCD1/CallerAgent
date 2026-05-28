@@ -152,17 +152,34 @@ export default function HistoryScreen() {
                   <View style={[s.badge, { backgroundColor: cfg.bg }]}>
                     <Text style={[s.badgeTxt, { color: cfg.color }]}>{cfg.label}</Text>
                   </View>
-                ) : null}
+                ) : (
+                  <View style={s.outcomePillNeutral}>
+                    <Text style={s.outcomePillNeutralTxt}>No human</Text>
+                  </View>
+                )}
               </View>
 
-              {/* Row 2: phone + time */}
+              {/* Row 1b: goal */}
+              {item.goal ? (
+                <Text style={s.goal} numberOfLines={1}>{item.goal}</Text>
+              ) : null}
+
+              {/* Row 2: time */}
               <View style={s.cardSub}>
-                <Text style={s.phone} numberOfLines={1}>{item.phone_number}</Text>
                 <Text style={s.timeAgo}>{timeAgo(item.started_at)}</Text>
               </View>
 
               {/* Row 3: stats + actions */}
               <View style={s.cardMeta}>
+                {item.ended_at ? (() => {
+                  const secs = Math.floor((new Date(item.ended_at).getTime() - new Date(item.started_at).getTime()) / 1000);
+                  return (
+                    <View style={s.statChip}>
+                      <Ionicons name="hourglass-outline" size={11} color={colors.muted} />
+                      <Text style={s.statChipTxt}>saved {fmtSeconds(secs)}</Text>
+                    </View>
+                  );
+                })() : null}
                 {item.wait_duration_seconds ? (
                   <View style={s.statChip}>
                     <Ionicons name="time-outline" size={11} color={colors.muted} />
@@ -214,8 +231,8 @@ const s = StyleSheet.create({
   cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
   company: { fontSize: 17, fontWeight: '700', color: colors.text, flex: 1 },
 
-  cardSub: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  phone:   { fontSize: 12, color: colors.subtext, flex: 1 },
+  goal:    { fontSize: 12, color: colors.subtext, marginBottom: 6, marginTop: 2 },
+  cardSub: { marginBottom: 8 },
   timeAgo: { fontSize: 12, color: colors.muted },
 
   badge:    { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 1 },
@@ -225,6 +242,8 @@ const s = StyleSheet.create({
   outcomePillGreenTxt: { fontSize: 11, color: colors.green, fontWeight: '600' },
   outcomePillRed:      { backgroundColor: 'rgba(239,68,68,0.10)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99 },
   outcomePillRedTxt:   { fontSize: 11, color: colors.red, fontWeight: '600' },
+  outcomePillNeutral:    { backgroundColor: 'rgba(100,116,139,0.10)', borderWidth: 1, borderColor: 'rgba(100,116,139,0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99 },
+  outcomePillNeutralTxt: { fontSize: 11, color: colors.muted, fontWeight: '600' },
 
   cardMeta:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
   statChip:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4 },
