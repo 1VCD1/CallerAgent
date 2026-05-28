@@ -34,8 +34,9 @@ export default function ProfileScreen() {
   const [apiKey, setLocalApiKey]   = useState('');
   const [saving, setSaving]     = useState(false);
   const [saved, setSaved]       = useState(false);
-  const [showDev, setShowDev]   = useState(false);
-  const [editMode, setEditMode] = useState(false);
+  const [showDev, setShowDev]       = useState(false);
+  const [editMode, setEditMode]     = useState(false);
+  const [showLangPicker, setShowLangPicker] = useState(false);
 
   const [noteCompany, setNoteCompany] = useState('');
   const [ivrNote, setIvrNote]         = useState<IvrNote | null>(null);
@@ -142,13 +143,31 @@ export default function ProfileScreen() {
               icon="language-outline"
               label={t('language_label')}
               value={t(LANG_OPTIONS.find(l => l.value === language)?.tKey ?? 'lang_en')}
-              onPress={() => {
-                const next = LANG_OPTIONS[(LANG_OPTIONS.findIndex(l => l.value === language) + 1) % LANG_OPTIONS.length];
-                setLanguage(next.value);
-                i18n.changeLanguage(next.value);
-              }}
-              chevronDir="forward"
+              onPress={() => setShowLangPicker(v => !v)}
+              chevronDir={showLangPicker ? 'up' : 'forward'}
             />
+            {showLangPicker && (
+              <View style={s.langPicker}>
+                {LANG_OPTIONS.map((opt, i) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[s.langOption, i < LANG_OPTIONS.length - 1 && s.langOptionBorder]}
+                    onPress={() => {
+                      setLanguage(opt.value);
+                      i18n.changeLanguage(opt.value);
+                      setShowLangPicker(false);
+                    }}
+                  >
+                    <Text style={[s.langOptionTxt, language === opt.value && s.langOptionTxtActive]}>
+                      {t(opt.tKey)}
+                    </Text>
+                    {language === opt.value && (
+                      <Ionicons name="checkmark" size={16} color={colors.green} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
 
           {/* Edit personal info (shown when editMode) */}
@@ -361,6 +380,12 @@ const s = StyleSheet.create({
   saveBtnTxt:  { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
   cancelBtn:   { alignItems: 'center', paddingVertical: 13, marginTop: 4, borderWidth: 1, borderColor: colors.border, borderRadius: 12 },
   cancelBtnTxt:{ fontSize: 14, fontWeight: '600', color: colors.muted },
+
+  langPicker:        { borderTopWidth: 1, borderTopColor: colors.border },
+  langOption:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
+  langOptionBorder:  { borderBottomWidth: 1, borderBottomColor: colors.border },
+  langOptionTxt:     { fontSize: 15, color: colors.subtext },
+  langOptionTxtActive:{ fontSize: 15, color: colors.text, fontWeight: '600' },
 
   devToggle:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 14, paddingHorizontal: 22 },
   devToggleTxt: { fontSize: 13, fontWeight: '600', color: colors.muted },
