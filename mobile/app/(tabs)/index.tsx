@@ -523,7 +523,6 @@ export default function CallScreen() {
               { value: 'Billing issue',       label: t('goal_billing') },
               { value: 'Cancel subscription', label: t('goal_cancel') },
               { value: 'Refund request',      label: t('goal_refund') },
-              { value: 'Technical support',   label: t('goal_support') },
             ] as const).map(chip => (
               <TouchableOpacity
                 key={chip.value}
