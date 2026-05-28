@@ -14,6 +14,7 @@ const zhTW = {
   goal_label: '我需要協助的事項',
   goal_optional: '· 選填',
   goal_placeholder: '描述你需要什麼…',
+  goal_appointment: '預約掛號',
   goal_billing: '帳單問題',
   goal_cancel: '取消訂閱',
   goal_refund: '申請退款',

@@ -14,6 +14,7 @@ const zhCN = {
   goal_label: '我需要协助的事项',
   goal_optional: '· 选填',
   goal_placeholder: '描述你需要什么…',
+  goal_appointment: '预约挂号',
   goal_billing: '账单问题',
   goal_cancel: '取消订阅',
   goal_refund: '申请退款',

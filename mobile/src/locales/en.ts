@@ -14,6 +14,7 @@ const en = {
   goal_label: 'WHAT I NEED HELP WITH',
   goal_optional: '· optional',
   goal_placeholder: 'Describe what you need…',
+  goal_appointment: 'Make appointment',
   goal_billing: 'Billing issue',
   goal_cancel: 'Cancel subscription',
   goal_refund: 'Refund request',

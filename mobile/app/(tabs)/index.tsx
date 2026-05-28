@@ -519,6 +519,7 @@ export default function CallScreen() {
           />
           <View style={s.goalChips}>
             {([
+              { value: 'Make appointment',    label: t('goal_appointment') },
               { value: 'Billing issue',       label: t('goal_billing') },
               { value: 'Cancel subscription', label: t('goal_cancel') },
               { value: 'Refund request',      label: t('goal_refund') },
