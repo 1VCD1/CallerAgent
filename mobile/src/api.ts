@@ -72,6 +72,25 @@ export async function setApiKey(key: string): Promise<void> {
   await AsyncStorage.setItem('apiKey', key);
 }
 
+async function getStoredUserId(): Promise<string | null> {
+  return AsyncStorage.getItem('devUserId');
+}
+
+export async function ensureDevUser(): Promise<string> {
+  const existing = await AsyncStorage.getItem('devUserId');
+  if (existing) return existing;
+  const url = await getApiUrl();
+  const res = await fetch(`${url}/users`, {
+    method: 'POST',
+    headers: await getHeaders(),
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) throw new Error('Failed to create dev user');
+  const user = await res.json() as UserProfile;
+  await AsyncStorage.setItem('devUserId', user.id);
+  return user.id;
+}
+
 export async function authLogin(): Promise<UserProfile> {
   const url = await getApiUrl();
   const res = await fetch(`${url}/auth/login`, {
@@ -110,21 +129,30 @@ export async function startCall(
   params: { company: string; phoneNumber: string; goal?: string; ivrLanguage?: string }
 ): Promise<{ callId: string; status: string }> {
   const url = await getApiUrl();
+  const token = await getIdToken();
+  const devUserId = !token ? await getStoredUserId() : null;
   const res = await fetch(`${url}/calls`, {
     method: 'POST',
     headers: await getHeaders(),
-    body: JSON.stringify(params),
+    body: JSON.stringify({ ...params, ...(devUserId ? { userId: devUserId } : {}) }),
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({})) as any;
-    throw new Error(err?.message ?? 'Failed to start call');
+    const body = await res.text().catch(() => '');
+    const err = (() => { try { return JSON.parse(body); } catch { return {}; } })() as any;
+    const e = new Error(err?.error ?? err?.message ?? `Server error ${res.status}: ${body.slice(0, 120)}`) as any;
+    e.status = res.status;
+    e.callId = err?.callId;
+    throw e;
   }
   return res.json();
 }
 
 export async function getCalls(limit = 20): Promise<Call[]> {
   const url = await getApiUrl();
-  const res = await fetch(`${url}/calls?limit=${limit}`, { headers: await getHeaders() });
+  const token = await getIdToken();
+  const devUserId = !token ? await getStoredUserId() : null;
+  const qs = `limit=${limit}${devUserId ? `&userId=${devUserId}` : ''}`;
+  const res = await fetch(`${url}/calls?${qs}`, { headers: await getHeaders() });
   if (!res.ok) return [];
   return res.json();
 }

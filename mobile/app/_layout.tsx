@@ -6,7 +6,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { onAuthStateChanged, User } from '@/firebase';
-import { authLogin, updateUser, getApiUrl } from '@/api';
+import { authLogin, updateUser, getApiUrl, ensureDevUser } from '@/api';
 import { useCallStore } from '@/store';
 
 Notifications.setNotificationHandler({
@@ -62,6 +62,12 @@ function useProtectedRoute(user: User | null | undefined) {
 export default function RootLayout() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const { setUserId } = useCallStore();
+
+  useEffect(() => {
+    if (DEV_SKIP_AUTH) {
+      ensureDevUser().then(id => setUserId(id)).catch(console.warn);
+    }
+  }, []);
 
   useEffect(() => {
     return onAuthStateChanged(async (firebaseUser) => {

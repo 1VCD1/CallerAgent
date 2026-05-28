@@ -16,15 +16,27 @@ function timeAgo(d: string) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+function fmtSeconds(s: number) {
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+type Filter = 'all' | 'success' | 'failed';
+
+const FILTERS: { key: Filter; label: string }[] = [
+  { key: 'all',     label: 'All' },
+  { key: 'success', label: 'Reached human' },
+  { key: 'failed',  label: 'Failed' },
+];
+
 export default function HistoryScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter]         = useState<Filter>('all');
   const { callHistory, setCallHistory } = useCallStore();
 
   const load = useCallback(async () => {
-    try {
-      setCallHistory(await getCalls(30));
-    } catch {}
+    try { setCallHistory(await getCalls(30)); } catch {}
   }, [setCallHistory]);
 
   useEffect(() => {
@@ -35,51 +47,139 @@ export default function HistoryScreen() {
 
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
+  const filtered = callHistory.filter(c => {
+    if (filter === 'success') return c.human_reached;
+    if (filter === 'failed')  return c.status === 'FAILED' || (c.status === 'ENDED' && !c.human_reached);
+    return true;
+  });
+
+  // Stats
+  const total      = callHistory.length;
+  const humanReach = callHistory.filter(c => c.human_reached);
+  const waits      = humanReach.map(c => c.wait_duration_seconds).filter((w): w is number => w != null);
+  const avgWait    = waits.length ? Math.round(waits.reduce((a, b) => a + b, 0) / waits.length) : null;
+  const successRate = total > 0 ? Math.round((humanReach.length / total) * 100) : null;
+
   return (
     <SafeAreaView style={s.safe}>
       <View style={s.header}>
-        <Text style={s.title}>History</Text>
-        <Text style={s.count}>{callHistory.length} calls</Text>
+        <Text style={s.title}>Sessions</Text>
       </View>
+
+      {/* Stats row */}
+      {total > 0 && (
+        <View style={s.statsRow}>
+          <View style={s.statCell}>
+            <Text style={s.statValue}>{total}</Text>
+            <Text style={s.statLabel}>Total</Text>
+          </View>
+          <View style={s.statDivider} />
+          {avgWait != null && (
+            <>
+              <View style={s.statCell}>
+                <Text style={s.statValue}>{fmtSeconds(avgWait)}</Text>
+                <Text style={s.statLabel}>Avg. wait</Text>
+              </View>
+              <View style={s.statDivider} />
+            </>
+          )}
+          {successRate != null && (
+            <View style={s.statCell}>
+              <Text style={[s.statValue, { color: colors.green }]}>{successRate}%</Text>
+              <Text style={s.statLabel}>Success rate</Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Filter chips */}
+      <View style={s.filterRow}>
+        {FILTERS.map(f => (
+          <TouchableOpacity
+            key={f.key}
+            style={[s.filterTab, filter === f.key && (
+              f.key === 'failed' ? s.filterTabFailed : s.filterTabActive
+            )]}
+            onPress={() => setFilter(f.key)}
+          >
+            <Text style={[s.filterTxt,
+              filter === f.key && f.key !== 'failed' && s.filterTxtActive,
+              filter === f.key && f.key === 'failed' && s.filterTxtFailed,
+            ]}>{f.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       <FlatList
-        data={callHistory}
+        data={filtered}
         keyExtractor={c => c.id}
         contentContainerStyle={s.list}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.blue} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.green} />}
         ListEmptyComponent={
           <View style={s.empty}>
-            <Ionicons name="call-outline" size={44} color={colors.muted} />
-            <Text style={s.emptyTxt}>No calls yet</Text>
-            <Text style={s.emptySubTxt}>Start a call from the Call tab</Text>
+            <View style={s.emptyIcon}>
+              <Ionicons name="call-outline" size={30} color={colors.muted} />
+            </View>
+            <Text style={s.emptyTxt}>{filter === 'all' ? 'No sessions yet' : 'No matching sessions'}</Text>
+            <Text style={s.emptySubTxt}>{filter === 'all' ? 'Start a call from the Agent tab' : 'Try a different filter'}</Text>
           </View>
         }
         renderItem={({ item }) => {
-          const cfg = STATUS[item.status] ?? STATUS['ENDED'];
+          const cfg      = STATUS[item.status] ?? STATUS['ENDED'];
           const isActive = ACTIVE_STATUSES.includes(item.status);
+          const accentColor = item.human_reached ? colors.green
+                            : item.status === 'FAILED' ? colors.red
+                            : colors.border;
           return (
-            <TouchableOpacity style={s.card} onPress={() => router.push(`/call/${item.id}` as any)} activeOpacity={0.7}>
-              <View style={s.topRow}>
-                <Text style={s.company}>{item.company}</Text>
-                <View style={[s.badge, { backgroundColor: cfg.bg }]}>
-                  <Text style={[s.badgeTxt, { color: cfg.color }]}>● {cfg.label}</Text>
-                </View>
-              </View>
-              <Text style={s.phone}>{item.phone_number}</Text>
-              <View style={s.metaRow}>
-                <Text style={s.meta}>{timeAgo(item.started_at)}</Text>
-                {item.wait_duration_seconds ? <Text style={s.meta}>· {item.wait_duration_seconds}s wait</Text> : null}
-                {item.human_reached && (
-                  <View style={s.pill}>
+            <TouchableOpacity
+              style={[s.card, { borderLeftColor: accentColor }]}
+              onPress={() => router.push(`/call/${item.id}` as any)}
+              activeOpacity={0.75}
+            >
+              {/* Row 1: company + outcome pill */}
+              <View style={s.cardTop}>
+                <Text style={s.company} numberOfLines={1}>{item.company}</Text>
+                {item.human_reached ? (
+                  <View style={s.outcomePillGreen}>
                     <Ionicons name="checkmark-circle" size={11} color={colors.green} />
-                    <Text style={s.pillTxt}>Human reached</Text>
+                    <Text style={s.outcomePillGreenTxt}>Human reached</Text>
                   </View>
-                )}
+                ) : item.status === 'FAILED' ? (
+                  <View style={s.outcomePillRed}>
+                    <Text style={s.outcomePillRedTxt}>Failed</Text>
+                  </View>
+                ) : isActive ? (
+                  <View style={[s.badge, { backgroundColor: cfg.bg }]}>
+                    <Text style={[s.badgeTxt, { color: cfg.color }]}>{cfg.label}</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              {/* Row 2: phone + time */}
+              <View style={s.cardSub}>
+                <Text style={s.phone} numberOfLines={1}>{item.phone_number}</Text>
+                <Text style={s.timeAgo}>{timeAgo(item.started_at)}</Text>
+              </View>
+
+              {/* Row 3: stats + actions */}
+              <View style={s.cardMeta}>
+                {item.wait_duration_seconds ? (
+                  <View style={s.statChip}>
+                    <Ionicons name="time-outline" size={11} color={colors.muted} />
+                    <Text style={s.statChipTxt}>{fmtSeconds(item.wait_duration_seconds)} wait</Text>
+                  </View>
+                ) : null}
+
                 {isActive && (
-                  <TouchableOpacity style={s.endBtn} onPress={(e) => { e.stopPropagation(); endCall(item.id).then(load); }}>
+                  <TouchableOpacity
+                    style={s.endBtn}
+                    onPress={e => { e.stopPropagation(); endCall(item.id).then(load); }}
+                  >
                     <Text style={s.endBtnTxt}>End</Text>
                   </TouchableOpacity>
                 )}
-                <Ionicons name="chevron-forward" size={14} color={colors.muted} style={{ marginLeft: 'auto' }} />
+
+                <Ionicons name="chevron-forward" size={13} color={colors.muted} style={{ marginLeft: 'auto' }} />
               </View>
             </TouchableOpacity>
           );
@@ -90,24 +190,51 @@ export default function HistoryScreen() {
 }
 
 const s = StyleSheet.create({
-  safe:     { flex: 1, backgroundColor: colors.bg },
-  header:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
-  title:    { fontSize: 22, fontWeight: '700', color: colors.text },
-  count:    { fontSize: 13, color: colors.muted },
-  list:     { padding: 16, paddingTop: 8, paddingBottom: 32 },
-  card:     { backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 14, marginBottom: 10 },
-  topRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  company:  { fontSize: 15, fontWeight: '600', color: colors.text, flex: 1, marginRight: 8 },
-  phone:    { fontSize: 12, color: colors.subtext, marginBottom: 8 },
-  badge:    { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
+  safe:   { flex: 1, backgroundColor: colors.bg },
+  header: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 14 },
+  title:  { fontSize: 26, fontWeight: '800', color: colors.text },
+
+  statsRow:    { flexDirection: 'row', alignItems: 'center', marginHorizontal: 22, marginBottom: 16, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingVertical: 14 },
+  statCell:    { flex: 1, alignItems: 'center' },
+  statValue:   { fontSize: 22, fontWeight: '800', color: colors.text },
+  statLabel:   { fontSize: 11, color: colors.muted, marginTop: 2 },
+  statDivider: { width: 1, height: 32, backgroundColor: colors.border },
+
+  filterRow:       { flexDirection: 'row', paddingHorizontal: 22, gap: 8, marginBottom: 12 },
+  filterTab:       { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)' },
+  filterTabActive: { borderColor: colors.green, backgroundColor: 'rgba(37,211,102,0.10)' },
+  filterTabFailed: { borderColor: colors.red,   backgroundColor: 'rgba(239,68,68,0.08)' },
+  filterTxt:       { fontSize: 12, fontWeight: '600', color: colors.muted },
+  filterTxtActive: { color: colors.green },
+  filterTxtFailed: { color: colors.red },
+
+  list: { paddingHorizontal: 22, paddingBottom: 40 },
+
+  card:    { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 4, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 10 },
+  cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
+  company: { fontSize: 17, fontWeight: '700', color: colors.text, flex: 1 },
+
+  cardSub: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  phone:   { fontSize: 12, color: colors.subtext, flex: 1 },
+  timeAgo: { fontSize: 12, color: colors.muted },
+
+  badge:    { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 1 },
   badgeTxt: { fontSize: 11, fontWeight: '600' },
-  metaRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  meta:     { fontSize: 12, color: colors.muted },
-  pill:     { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#052e16', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 99 },
-  pillTxt:  { fontSize: 11, color: colors.green, fontWeight: '600' },
-  endBtn:   { borderWidth: 1, borderColor: '#7f1d1d', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 3 },
-  endBtnTxt:{ color: colors.red, fontSize: 11, fontWeight: '600' },
-  empty:    { alignItems: 'center', paddingTop: 80, gap: 8 },
-  emptyTxt: { fontSize: 16, fontWeight: '600', color: colors.subtext },
-  emptySubTxt: { fontSize: 13, color: colors.muted },
+
+  outcomePillGreen:    { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(37,211,102,0.12)', borderWidth: 1, borderColor: 'rgba(37,211,102,0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99 },
+  outcomePillGreenTxt: { fontSize: 11, color: colors.green, fontWeight: '600' },
+  outcomePillRed:      { backgroundColor: 'rgba(239,68,68,0.10)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99 },
+  outcomePillRedTxt:   { fontSize: 11, color: colors.red, fontWeight: '600' },
+
+  cardMeta:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statChip:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4 },
+  statChipTxt: { fontSize: 11, color: colors.muted },
+
+  endBtn:    { borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 3 },
+  endBtnTxt: { color: colors.red, fontSize: 11, fontWeight: '600' },
+
+  empty:      { alignItems: 'center', paddingTop: 80, gap: 10 },
+  emptyIcon:  { width: 68, height: 68, borderRadius: 34, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  emptyTxt:   { fontSize: 16, fontWeight: '600', color: colors.subtext },
+  emptySubTxt:{ fontSize: 13, color: colors.muted },
 });
