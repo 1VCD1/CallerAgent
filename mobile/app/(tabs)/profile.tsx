@@ -7,12 +7,21 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useTranslation } from 'react-i18next';
 import { colors } from '@/theme';
 import { getUser, updateUser, getApiUrl, setApiUrl, getApiKey, setApiKey, getIvrNotes, IvrNote } from '@/api';
 import { useCallStore } from '@/store';
 import { auth, signOut } from '@/firebase';
+import i18n, { AppLanguage } from '@/i18n';
+
+const LANG_OPTIONS: { value: AppLanguage; tKey: string }[] = [
+  { value: 'en',    tKey: 'lang_en' },
+  { value: 'zh-TW', tKey: 'lang_zh_TW' },
+  { value: 'zh-CN', tKey: 'lang_zh_CN' },
+];
 
 export default function ProfileScreen() {
+  const { t } = useTranslation();
   const { userId } = useCallStore();
   const firebaseUser = auth.currentUser;
 
@@ -20,6 +29,7 @@ export default function ProfileScreen() {
   const [phone, setPhone]       = useState('');
   const [birthday, setBirthday] = useState('');
   const [email, setEmail]       = useState('');
+  const [language, setLanguage] = useState<AppLanguage>(i18n.language as AppLanguage);
   const [apiUrl, setLocalApiUrl]   = useState('');
   const [apiKey, setLocalApiKey]   = useState('');
   const [saving, setSaving]     = useState(false);
@@ -44,6 +54,7 @@ export default function ProfileScreen() {
       if (u.phone_number) setPhone(u.phone_number);
       if (u.birthday)     setBirthday(u.birthday.slice(0, 10));
       if (u.email)        setEmail(u.email);
+      if (u.language)     setLanguage(u.language);
     }).catch(() => {});
   }, [userId]);
 
@@ -66,18 +77,20 @@ export default function ProfileScreen() {
       }
       if (birthday.trim()) data.birthday = birthday.trim();
       if (email.trim())    data.email    = email.trim();
+      data.language = language;
       if (Object.keys(data).length) await updateUser(userId, data);
+      i18n.changeLanguage(language);
       setSaved(true); setEditMode(false);
       setTimeout(() => setSaved(false), 2500);
     } catch (e: any) {
-      Alert.alert('Error', e.message ?? 'Save failed');
+      Alert.alert(t('error'), e.message ?? t('save_failed'));
     } finally { setSaving(false); }
   };
 
   const handleSignOut = () => {
-    Alert.alert('Sign out', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: () => signOut().catch(console.warn) },
+    Alert.alert(t('sign_out_confirm_title'), t('sign_out_confirm_body'), [
+      { text: t('cancel'), style: 'cancel' },
+      { text: t('sign_out'), style: 'destructive', onPress: () => signOut().catch(console.warn) },
     ]);
   };
 
@@ -96,10 +109,10 @@ export default function ProfileScreen() {
 
           {/* Header */}
           <View style={s.header}>
-            <Text style={s.title}>You</Text>
+            <Text style={s.title}>{t('you')}</Text>
             <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut}>
               <Ionicons name="log-out-outline" size={17} color={colors.red} />
-              <Text style={s.signOutTxt}>Sign out</Text>
+              <Text style={s.signOutTxt}>{t('sign_out')}</Text>
             </TouchableOpacity>
           </View>
 
@@ -114,29 +127,41 @@ export default function ProfileScreen() {
 
           {/* Preferences section */}
           <View style={s.section}>
-            <Text style={s.sectionTitle}>PREFERENCES</Text>
+            <Text style={s.sectionTitle}>{t('preferences')}</Text>
 
             <SettingRow
               icon="call-outline"
-              label="Callback phone"
-              value={phone || 'Not set'}
+              label={t('callback_phone')}
+              value={phone || t('not_set')}
               onPress={() => setEditMode(v => !v)}
               valueColor={phone ? colors.text : colors.red}
               chevronDir={editMode ? 'up' : 'forward'}
+            />
+            <SettingDivider />
+            <SettingRow
+              icon="language-outline"
+              label={t('language_label')}
+              value={t(LANG_OPTIONS.find(l => l.value === language)?.tKey ?? 'lang_en')}
+              onPress={() => {
+                const next = LANG_OPTIONS[(LANG_OPTIONS.findIndex(l => l.value === language) + 1) % LANG_OPTIONS.length];
+                setLanguage(next.value);
+                i18n.changeLanguage(next.value);
+              }}
+              chevronDir="forward"
             />
           </View>
 
           {/* Edit personal info (shown when editMode) */}
           {editMode && (
             <View style={s.editCard}>
-              <Text style={s.editCardTitle}>Personal Info</Text>
-              <Text style={s.editCardHint}>Used by AI when a representative asks for verification</Text>
+              <Text style={s.editCardTitle}>{t('personal_info_title')}</Text>
+              <Text style={s.editCardHint}>{t('personal_info_hint')}</Text>
 
-              <Field label="Full Name"      placeholder="John Doe"          value={name}     onChangeText={setName} />
-              <Field label="Callback Phone" placeholder="234 567 8900"      value={phone}    onChangeText={setPhone} keyboardType="phone-pad"
-                hint="Your phone rings when the AI finds a live rep" required />
+              <Field label={t('full_name')}      placeholder={t('full_name_placeholder')} value={name}  onChangeText={setName} />
+              <Field label={t('callback_phone')} placeholder="234 567 8900"               value={phone} onChangeText={setPhone} keyboardType="phone-pad"
+                hint={t('phone_hint')} required />
               <View style={s.fieldWrap}>
-                <Text style={s.fieldLabel}>DATE OF BIRTH</Text>
+                <Text style={s.fieldLabel}>{t('dob')}</Text>
                 <TextInput
                   style={s.input}
                   placeholder="YYYY-MM-DD"
@@ -153,7 +178,7 @@ export default function ProfileScreen() {
                   }}
                 />
               </View>
-              <Field label="Email" placeholder="you@email.com" value={email} onChangeText={setEmail}
+              <Field label={t('email')} placeholder="you@email.com" value={email} onChangeText={setEmail}
                 keyboardType="email-address" autoCapitalize="none" />
 
               <TouchableOpacity onPress={save} disabled={saving} activeOpacity={0.85} style={s.saveBtnWrap}>
@@ -165,14 +190,14 @@ export default function ProfileScreen() {
                   {saving
                     ? <ActivityIndicator color="#fff" />
                     : saved
-                      ? <><Ionicons name="checkmark" size={18} color="#fff" /><Text style={s.saveBtnTxt}>Saved!</Text></>
-                      : <Text style={s.saveBtnTxt}>Save</Text>
+                      ? <><Ionicons name="checkmark" size={18} color="#fff" /><Text style={s.saveBtnTxt}>{t('saved')}</Text></>
+                      : <Text style={s.saveBtnTxt}>{t('save')}</Text>
                   }
                 </LinearGradient>
               </TouchableOpacity>
 
               <TouchableOpacity style={s.cancelBtn} onPress={() => setEditMode(false)}>
-                <Text style={s.cancelBtnTxt}>Collapse</Text>
+                <Text style={s.cancelBtnTxt}>{t('collapse')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -180,7 +205,7 @@ export default function ProfileScreen() {
           {/* Developer options toggle */}
           <TouchableOpacity style={s.devToggle} onPress={() => setShowDev(v => !v)}>
             <Ionicons name="code-slash-outline" size={15} color={colors.muted} />
-            <Text style={s.devToggleTxt}>Developer Options</Text>
+            <Text style={s.devToggleTxt}>{t('dev_options')}</Text>
             <Ionicons name={showDev ? 'chevron-up' : 'chevron-down'} size={14} color={colors.muted} style={{ marginLeft: 'auto' }} />
           </TouchableOpacity>
 
@@ -195,10 +220,10 @@ export default function ProfileScreen() {
                 const url = apiUrl.trim();
                 try {
                   const res = await fetch(`${url}/users/ping-test-404`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
-                  Alert.alert('Connected!', `HTTP ${res.status}\n${url}`);
-                } catch (e: any) { Alert.alert('Failed', `${e.message}\n${url}`); }
+                  Alert.alert(t('connected'), `HTTP ${res.status}\n${url}`);
+                } catch (e: any) { Alert.alert(t('failed'), `${e.message}\n${url}`); }
               }}>
-                <Text style={s.testBtnTxt}>Test Connection</Text>
+                <Text style={s.testBtnTxt}>{t('test_connection')}</Text>
               </TouchableOpacity>
 
               <TouchableOpacity onPress={save} disabled={saving} activeOpacity={0.85} style={[s.saveBtnWrap, { marginTop: 12 }]}>
@@ -207,13 +232,13 @@ export default function ProfileScreen() {
                   start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                   style={s.saveBtn}
                 >
-                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.saveBtnTxt}>Save Settings</Text>}
+                  {saving ? <ActivityIndicator color="#fff" /> : <Text style={s.saveBtnTxt}>{t('save_settings')}</Text>}
                 </LinearGradient>
               </TouchableOpacity>
 
               {/* IVR Notes */}
               <View style={{ marginTop: 20 }}>
-                <Text style={s.fieldLabel}>IVR LEARNING NOTES</Text>
+                <Text style={s.fieldLabel}>{t('ivr_notes_label')}</Text>
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
                   <TextInput
                     style={[s.input, { flex: 1 }]}
@@ -233,10 +258,10 @@ export default function ProfileScreen() {
                       setNoteLoading(false);
                     }}
                   >
-                    {noteLoading ? <ActivityIndicator size="small" color={colors.blue} /> : <Text style={s.testBtnTxt}>Load</Text>}
+                    {noteLoading ? <ActivityIndicator size="small" color={colors.blue} /> : <Text style={s.testBtnTxt}>{t('load')}</Text>}
                   </TouchableOpacity>
                 </View>
-                {noteError ? <Text style={{ color: colors.muted, fontSize: 13, marginTop: 8 }}>{noteError}</Text> : null}
+                {noteError ? <Text style={{ color: colors.muted, fontSize: 13, marginTop: 8 }}>{t('no_ivr_notes')}</Text> : null}
                 {ivrNote && (
                   <View style={{ marginTop: 12 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -290,11 +315,12 @@ function SettingDivider() {
 }
 
 function Field({ label, hint, required, ...p }: { label: string; hint?: string; required?: boolean } & React.ComponentProps<typeof TextInput>) {
+  const { t } = useTranslation();
   return (
     <View style={s.fieldWrap}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 }}>
         <Text style={s.fieldLabel}>{label}</Text>
-        {required && <Text style={s.fieldRequired}>REQUIRED</Text>}
+        {required && <Text style={s.fieldRequired}>{t('required')}</Text>}
       </View>
       <TextInput style={s.input} placeholderTextColor={colors.muted} {...p} />
       {hint && <Text style={s.fieldHint}>{hint}</Text>}

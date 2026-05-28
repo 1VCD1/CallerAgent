@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { ColorValue } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { colors } from '@/theme';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -12,6 +13,7 @@ function tabIcon(name: IoniconName) {
 }
 
 export default function TabLayout() {
+  const { t } = useTranslation();
   return (
     <Tabs
       screenOptions={{
@@ -27,9 +29,9 @@ export default function TabLayout() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
       }}
     >
-      <Tabs.Screen name="index"   options={{ title: 'Agent',    tabBarIcon: tabIcon('headset') }} />
-      <Tabs.Screen name="history" options={{ title: 'Sessions', tabBarIcon: tabIcon('time-outline') }} />
-      <Tabs.Screen name="profile" options={{ title: 'You',      tabBarIcon: tabIcon('person-outline') }} />
+      <Tabs.Screen name="index"   options={{ title: t('tab_agent'),    tabBarIcon: tabIcon('headset') }} />
+      <Tabs.Screen name="history" options={{ title: t('tab_sessions'), tabBarIcon: tabIcon('time-outline') }} />
+      <Tabs.Screen name="profile" options={{ title: t('tab_you'),      tabBarIcon: tabIcon('person-outline') }} />
     </Tabs>
   );
 }

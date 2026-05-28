@@ -1,3 +1,4 @@
+import '@/i18n'; // initialize i18n before anything renders
 import { useEffect, useRef, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
@@ -8,6 +9,7 @@ import Constants from 'expo-constants';
 import { onAuthStateChanged, User } from '@/firebase';
 import { authLogin, updateUser, getApiUrl, ensureDevUser } from '@/api';
 import { useCallStore } from '@/store';
+import i18n from '@/i18n';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -100,6 +102,7 @@ export default function RootLayout() {
         try {
           const profile = await authLogin();
           setUserId(profile.id);
+          if (profile.language) i18n.changeLanguage(profile.language);
           await registerPushToken(profile.id).catch(console.warn);
         } catch (err) {
           console.warn('[Auth] authLogin failed:', err);

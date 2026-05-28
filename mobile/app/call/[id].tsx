@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
+import { useTranslation } from 'react-i18next';
 import { colors, STATUS } from '@/theme';
 import { getCall, getApiUrl, getCompanyNote, saveCompanyNote } from '@/api';
 import { getOutcomeConfig } from '@/outcome';
@@ -27,6 +28,7 @@ function formatDuration(startedAt: string, endedAt?: string) {
 }
 
 export default function CallDetailScreen() {
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router  = useRouter();
   const [call, setCall]           = useState<Call | null>(null);
@@ -101,10 +103,10 @@ export default function CallDetailScreen() {
       <SafeAreaView style={s.safe}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
           <Ionicons name="chevron-back" size={22} color={colors.text} />
-          <Text style={s.backTxt}>Sessions</Text>
+          <Text style={s.backTxt}>{t('back_sessions')}</Text>
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: colors.muted, fontSize: 15 }}>Session not found</Text>
+          <Text style={{ color: colors.muted, fontSize: 15 }}>{t('session_not_found')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -121,7 +123,7 @@ export default function CallDetailScreen() {
       <View style={s.topBar}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
           <Ionicons name="chevron-back" size={22} color={colors.text} />
-          <Text style={s.backTxt}>Sessions</Text>
+          <Text style={s.backTxt}>{t('back_sessions')}</Text>
         </TouchableOpacity>
         {isTerminal && (
           <View style={[s.outcomePill, { backgroundColor: outcome.bg, borderColor: outcome.border }]}>
@@ -158,22 +160,22 @@ export default function CallDetailScreen() {
 
         {/* Stats grid */}
         <View style={s.statsGrid}>
-          <StatCell label="Started" value={formatDate(call.started_at)} />
-          <StatCell label="Duration" value={formatDuration(call.started_at, call.ended_at)} />
+          <StatCell label={t('stat_started')} value={formatDate(call.started_at)} />
+          <StatCell label={t('stat_duration')} value={formatDuration(call.started_at, call.ended_at)} />
           {call.wait_duration_seconds != null && (
-            <StatCell label="Wait time" value={`${call.wait_duration_seconds}s`} />
+            <StatCell label={t('stat_wait_time')} value={`${call.wait_duration_seconds}s`} />
           )}
           {!!call.human_confidence && (
-            <StatCell label="Confidence" value={`${Math.round(call.human_confidence * 100)}%`} />
+            <StatCell label={t('stat_confidence')} value={`${Math.round(call.human_confidence * 100)}%`} />
           )}
         </View>
 
         {/* Transcript */}
         <View style={s.transcriptCard}>
           <TouchableOpacity style={s.sectionRow} onPress={() => setShowTranscript(v => !v)} activeOpacity={0.7}>
-            <Text style={s.sectionTitle}>TRANSCRIPT</Text>
+            <Text style={s.sectionTitle}>{t('transcript')}</Text>
             <View style={s.sectionRight}>
-              <Text style={s.sectionCount}>{transcripts.length} lines</Text>
+              <Text style={s.sectionCount}>{t('transcript_lines', { count: transcripts.length })}</Text>
               <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={14} color={colors.muted} />
             </View>
           </TouchableOpacity>
@@ -181,7 +183,7 @@ export default function CallDetailScreen() {
           {showTranscript && (
             transcripts.length === 0 ? (
               <View style={s.empty}>
-                <Text style={s.emptyTxt}>No transcript recorded</Text>
+                <Text style={s.emptyTxt}>{t('no_transcript')}</Text>
               </View>
             ) : (
               <View style={{ paddingTop: 8, gap: 8 }}>
@@ -206,7 +208,7 @@ export default function CallDetailScreen() {
                             }]} />
                             <Text style={[s.confTxt, {
                               color: pct > 60 ? colors.green : pct > 30 ? colors.yellow : colors.muted,
-                            }]}>{pct}% human confidence</Text>
+                            }]}>{t('human_confidence', { pct })}</Text>
                           </View>
                         )}
                       </View>
@@ -221,11 +223,11 @@ export default function CallDetailScreen() {
         {/* Tip for next call — only shown on completed calls */}
         {isTerminal && (
           <View style={s.noteCard}>
-            <Text style={s.noteTitle}>TIP FOR NEXT CALL</Text>
-            <Text style={s.noteHint}>Saved hints are passed directly to the AI on future calls to {call.company}.</Text>
+            <Text style={s.noteTitle}>{t('tip_title')}</Text>
+            <Text style={s.noteHint}>{t('tip_hint', { company: call.company })}</Text>
             <TextInput
               style={s.noteInput}
-              placeholder={`e.g. "Press 0 twice to skip the menu"`}
+              placeholder={t('tip_placeholder')}
               placeholderTextColor={colors.muted}
               value={note}
               onChangeText={setNote}
@@ -240,7 +242,7 @@ export default function CallDetailScreen() {
               {noteSaving
                 ? <ActivityIndicator size="small" color={colors.green} />
                 : <Text style={[s.noteSaveBtnTxt, noteSaved && { color: colors.green }]}>
-                    {noteSaved ? 'Saved ✓' : 'Save tip'}
+                    {noteSaved ? t('tip_saved') : t('save_tip')}
                   </Text>
               }
             </TouchableOpacity>
@@ -255,8 +257,8 @@ export default function CallDetailScreen() {
               : <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={34} color={colors.blue} />
             }
             <View style={{ flex: 1 }}>
-              <Text style={s.recordingTitle}>Call Recording</Text>
-              <Text style={s.recordingSubtitle}>{isPlaying ? 'Playing…' : 'Tap to play'}</Text>
+              <Text style={s.recordingTitle}>{t('recording_title')}</Text>
+              <Text style={s.recordingSubtitle}>{isPlaying ? t('recording_playing') : t('recording_tap')}</Text>
             </View>
             <Ionicons name="musical-notes-outline" size={16} color={colors.muted} />
           </TouchableOpacity>

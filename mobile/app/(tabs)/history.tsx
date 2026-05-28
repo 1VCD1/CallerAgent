@@ -3,18 +3,22 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl } fr
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
 import { getCalls, endCall } from '@/api';
 import { useCallStore } from '@/store';
 import { getOutcomeConfig, NON_FAILURE_REASONS } from '@/outcome';
 
-function timeAgo(d: string) {
-  const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+function useTimeAgo() {
+  const { t } = useTranslation();
+  return (d: string) => {
+    const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
+    if (m < 1) return t('just_now');
+    if (m < 60) return t('time_min', { n: m });
+    const h = Math.floor(m / 60);
+    if (h < 24) return t('time_hour', { n: h });
+    return t('time_day', { n: Math.floor(h / 24) });
+  };
 }
 
 function fmtSeconds(s: number) {
@@ -24,17 +28,19 @@ function fmtSeconds(s: number) {
 
 type Filter = 'all' | 'success' | 'failed';
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all',     label: 'All' },
-  { key: 'success', label: 'Reached human' },
-  { key: 'failed',  label: 'Not reached' },
-];
-
 export default function HistoryScreen() {
+  const { t } = useTranslation();
+  const timeAgo = useTimeAgo();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter]         = useState<Filter>('all');
   const { callHistory, setCallHistory } = useCallStore();
+
+  const FILTERS: { key: Filter; label: string }[] = [
+    { key: 'all',     label: t('filter_all') },
+    { key: 'success', label: t('filter_success') },
+    { key: 'failed',  label: t('filter_failed') },
+  ];
 
   const load = useCallback(async () => {
     try { setCallHistory(await getCalls(30)); } catch {}
@@ -65,7 +71,7 @@ export default function HistoryScreen() {
   return (
     <SafeAreaView style={s.safe}>
       <View style={s.header}>
-        <Text style={s.title}>Sessions</Text>
+        <Text style={s.title}>{t('sessions')}</Text>
       </View>
 
       {/* Stats row */}
@@ -73,14 +79,14 @@ export default function HistoryScreen() {
         <View style={s.statsRow}>
           <View style={s.statCell}>
             <Text style={s.statValue}>{total}</Text>
-            <Text style={s.statLabel}>Total</Text>
+            <Text style={s.statLabel}>{t('stat_total')}</Text>
           </View>
           <View style={s.statDivider} />
           {avgWait != null && (
             <>
               <View style={s.statCell}>
                 <Text style={s.statValue}>{fmtSeconds(avgWait)}</Text>
-                <Text style={s.statLabel}>Avg. wait</Text>
+                <Text style={s.statLabel}>{t('stat_avg_wait')}</Text>
               </View>
               <View style={s.statDivider} />
             </>
@@ -88,7 +94,7 @@ export default function HistoryScreen() {
           {successRate != null && (
             <View style={s.statCell}>
               <Text style={[s.statValue, { color: colors.green }]}>{successRate}%</Text>
-              <Text style={s.statLabel}>Success rate</Text>
+              <Text style={s.statLabel}>{t('stat_success_rate')}</Text>
             </View>
           )}
         </View>
@@ -122,8 +128,8 @@ export default function HistoryScreen() {
             <View style={s.emptyIcon}>
               <Ionicons name="call-outline" size={30} color={colors.muted} />
             </View>
-            <Text style={s.emptyTxt}>{filter === 'all' ? 'No sessions yet' : 'No matching sessions'}</Text>
-            <Text style={s.emptySubTxt}>{filter === 'all' ? 'Start a call from the Agent tab' : 'Try a different filter'}</Text>
+            <Text style={s.emptyTxt}>{filter === 'all' ? t('no_sessions') : t('no_matching_sessions')}</Text>
+            <Text style={s.emptySubTxt}>{filter === 'all' ? t('start_from_agent') : t('try_filter')}</Text>
           </View>
         }
         renderItem={({ item }) => {
@@ -173,14 +179,14 @@ export default function HistoryScreen() {
                   return (
                     <View style={s.statChip}>
                       <Ionicons name="hourglass-outline" size={11} color={colors.muted} />
-                      <Text style={s.statChipTxt}>saved {fmtSeconds(secs)}</Text>
+                      <Text style={s.statChipTxt}>{t('saved_time', { time: fmtSeconds(secs) })}</Text>
                     </View>
                   );
                 })() : null}
                 {item.wait_duration_seconds ? (
                   <View style={s.statChip}>
                     <Ionicons name="time-outline" size={11} color={colors.muted} />
-                    <Text style={s.statChipTxt}>{fmtSeconds(item.wait_duration_seconds)} wait</Text>
+                    <Text style={s.statChipTxt}>{t('wait_time', { time: fmtSeconds(item.wait_duration_seconds) })}</Text>
                   </View>
                 ) : null}
 
@@ -189,7 +195,7 @@ export default function HistoryScreen() {
                     style={s.endBtn}
                     onPress={e => { e.stopPropagation(); endCall(item.id).then(load); }}
                   >
-                    <Text style={s.endBtnTxt}>End</Text>
+                    <Text style={s.endBtnTxt}>{t('end')}</Text>
                   </TouchableOpacity>
                 )}
 

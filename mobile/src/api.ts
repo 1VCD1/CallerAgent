@@ -8,7 +8,7 @@ export interface UserProfile {
   phone_number?: string;
   birthday?: string;
   push_token?: string;
-  language?: string;
+  language?: 'en' | 'zh-TW' | 'zh-CN';
 }
 
 export interface Transcript {

@@ -8,6 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useTranslation } from 'react-i18next';
 import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
 import { startCall, getCalls, getCall, endCall, getApiUrl, getCompanyStats, getCompanySuggestions } from '@/api';
 import { useCallStore } from '@/store';
@@ -113,11 +114,12 @@ function getOrbState(status: string): OrbState {
   return 'navigating';
 }
 
-const STEPS: { key: OrbState; label: string; color: string }[] = [
-  { key: 'dialing',    label: 'Dialing',    color: '#3b82f6' },
-  { key: 'navigating', label: 'Navigating', color: '#a78bfa' },
-  { key: 'waiting',    label: 'On Hold',    color: '#f59e0b' },
-  { key: 'human',      label: 'Human!',     color: '#25D366' },
+// Step labels resolved in component via t() — keys only here
+const STEP_KEYS = [
+  { key: 'dialing'    as OrbState, tKey: 'step_dialing',    color: '#3b82f6' },
+  { key: 'navigating' as OrbState, tKey: 'step_navigating', color: '#a78bfa' },
+  { key: 'waiting'    as OrbState, tKey: 'step_hold',       color: '#f59e0b' },
+  { key: 'human'      as OrbState, tKey: 'step_human',      color: '#25D366' },
 ];
 
 interface ActiveCallViewProps {
@@ -131,6 +133,7 @@ interface ActiveCallViewProps {
 }
 
 function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: ActiveCallViewProps) {
+  const { t } = useTranslation();
   const [showTranscript, setShowTranscript] = useState(false);
   const orbState     = getOrbState(call.status);
   const prevLen      = useRef(0);
@@ -144,6 +147,7 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
     }
   }, [transcripts.length]);
 
+  const STEPS = STEP_KEYS.map(s => ({ ...s, label: t(s.tKey) }));
   const stepIdx = STEPS.findIndex(st => st.key === orbState);
   const activeStep = STEPS[stepIdx] ?? STEPS[0];
 
@@ -154,7 +158,7 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
         <Text style={s.callHeaderTitle} numberOfLines={1}>{call.company}</Text>
         <TouchableOpacity style={s.callEndBtnSmall} onPress={onEnd} activeOpacity={0.8}>
           <Ionicons name="call" size={14} color="#fff" />
-          <Text style={s.callEndBtnSmallTxt}>End</Text>
+          <Text style={s.callEndBtnSmallTxt}>{t('end')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -165,8 +169,8 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
 
         {isHuman ? (
           <View style={s.callHumanTextBlock}>
-            <Text style={s.callHumanTitle}>Human found.</Text>
-            <Text style={s.callHumanSub}>Keep your phone nearby</Text>
+            <Text style={s.callHumanTitle}>{t('human_found')}</Text>
+            <Text style={s.callHumanSub}>{t('keep_phone')}</Text>
           </View>
         ) : (
           <View style={s.callStatusBlock}>
@@ -187,7 +191,7 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
             {/* Confidence bar (shown when AI detects a possible human) */}
             {confidence > 0 && (
               <View style={s.callConfBlock}>
-                <Text style={s.callConfHint}>Sounds like a real person…</Text>
+                <Text style={s.callConfHint}>{t('sounds_human')}</Text>
                 <View style={s.callConfRow}>
                   <View style={s.callConfTrack}>
                     <View style={[s.callConfFill, {
@@ -208,7 +212,7 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
         {/* Transcript toggle */}
         <TouchableOpacity style={s.transcriptToggle} onPress={() => setShowTranscript(v => !v)}>
           <Ionicons name="document-text-outline" size={15} color={colors.muted} />
-          <Text style={s.transcriptToggleTxt}>Live Transcript</Text>
+          <Text style={s.transcriptToggleTxt}>{t('live_transcript')}</Text>
           {transcripts.length > 0 && (
             <View style={s.transcriptBadge}>
               <Text style={s.transcriptBadgeTxt}>{transcripts.length}</Text>
@@ -225,7 +229,7 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
             onContentSizeChange={() => transcriptRef.current?.scrollToEnd({ animated: true })}
           >
             {transcripts.length === 0 ? (
-              <Text style={s.transcriptEmpty}>Waiting for IVR to speak…</Text>
+              <Text style={s.transcriptEmpty}>{t('waiting_ivr')}</Text>
             ) : (
               transcripts.map((t, i) => {
                 const isAI       = t.speaker === 'AI';
@@ -253,7 +257,7 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
             <View style={s.callInfoIconWrap}>
               <Ionicons name="phone-portrait" size={18} color={colors.green} />
             </View>
-            <Text style={s.callInfoTxt}>We'll call you the moment a human picks up</Text>
+            <Text style={s.callInfoTxt}>{t('call_info')}</Text>
           </View>
         </View>
       )}
@@ -264,6 +268,7 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
 // ─── Home Screen ──────────────────────────────────────────────────────────────
 
 export default function CallScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const [company, setCompany]     = useState('');
   const [phone, setPhone]         = useState('');
@@ -354,7 +359,7 @@ export default function CallScreen() {
   const handleStart = async () => {
     if (submitting.current) return;
     if (!company.trim() || !phone.trim()) {
-      Alert.alert('Missing info', 'Company name and phone number are required.');
+      Alert.alert(t('missing_info_title'), t('missing_info_body'));
       return;
     }
     submitting.current = true;
@@ -372,18 +377,18 @@ export default function CallScreen() {
           if (stuck) setActiveCall(stuck);
         } else { await refresh(); }
       } else if (e.code === 'DAILY_LIMIT_REACHED') {
-        Alert.alert('Daily limit reached', e.message ?? 'You\'ve reached the daily call limit. Try again in a few hours.');
+        Alert.alert(t('daily_limit_title'), e.message);
       } else if (e.code === 'MISSING_CALLBACK_PHONE') {
         Alert.alert(
-          'Callback phone required',
-          'Add your callback phone number in the You tab — we need it to connect you when a human answers.',
+          t('callback_required_title'),
+          t('callback_required_body'),
           [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Go to Profile', onPress: () => router.push('/(tabs)/profile') },
+            { text: t('cancel'), style: 'cancel' },
+            { text: t('go_to_profile'), onPress: () => router.push('/(tabs)/profile') },
           ]
         );
       } else {
-        Alert.alert('Error', e.message ?? 'Failed to start call');
+        Alert.alert(t('error'), e.message ?? t('save_failed'));
       }
     } finally {
       setLoading(false);
@@ -418,8 +423,8 @@ export default function CallScreen() {
 
         {/* Hero — left-aligned */}
         <View style={s.heroBlock}>
-          <Text style={s.heroTitle}><Text style={{ color: colors.green }}>Skip</Text> the{'\n'}hold music.</Text>
-          <Text style={s.heroSub}>CallerAgent navigates the phone system{'\n'}so you don't have to.</Text>
+          <Text style={s.heroTitle}><Text style={{ color: colors.green }}>{t('hero_highlight')}</Text>{t('hero_title_rest')}</Text>
+          <Text style={s.heroSub}>{t('hero_sub')}</Text>
         </View>
 
         {/* Orb — centered */}
@@ -434,7 +439,7 @@ export default function CallScreen() {
             <View style={s.iconInput}>
               <Ionicons name="business-outline" size={18} color={colors.muted} style={s.iconInputIcon} />
               <TextInput
-                style={s.iconInputField} placeholder="Company name"
+                style={s.iconInputField} placeholder={t('company_placeholder')}
                 placeholderTextColor={colors.muted} value={company}
                 onChangeText={setCompany}
               />
@@ -474,8 +479,9 @@ export default function CallScreen() {
             <View style={s.statsHint}>
               <Ionicons name="bar-chart-outline" size={11} color={colors.muted} />
               <Text style={s.statsHintTxt}>
-                {companyStats.total} call{companyStats.total > 1 ? 's' : ''} · {companyStats.successPct}% success
-                {companyStats.avgWaitSecs ? ` · avg ${Math.round(companyStats.avgWaitSecs / 60)}m wait` : ''}
+                {companyStats.total === 1 ? t('stats_calls_one') : t('stats_calls_other', { count: companyStats.total })}
+                {' · '}{t('stats_success', { pct: companyStats.successPct })}
+                {companyStats.avgWaitSecs ? ' · ' + t('stats_avg_wait', { min: Math.round(companyStats.avgWaitSecs / 60) }) : ''}
               </Text>
             </View>
           )}
@@ -483,7 +489,7 @@ export default function CallScreen() {
           <View style={[s.iconInput, { marginBottom: 12 }]}>
             <Ionicons name="call-outline" size={18} color={colors.muted} style={s.iconInputIcon} />
             <TextInput
-              style={s.iconInputField} placeholder="Phone number"
+              style={s.iconInputField} placeholder={t('phone_placeholder')}
               placeholderTextColor={colors.muted} value={phone} onChangeText={setPhone} keyboardType="phone-pad"
             />
           </View>
@@ -496,7 +502,7 @@ export default function CallScreen() {
             >
               {loading
                 ? <ActivityIndicator color="#fff" />
-                : <><Ionicons name="sparkles" size={20} color="#fff" /><Text style={s.startBtnTxt}>Start AI Call</Text></>
+                : <><Ionicons name="sparkles" size={20} color="#fff" /><Text style={s.startBtnTxt}>{t('start_call')}</Text></>
               }
             </LinearGradient>
           </TouchableOpacity>
@@ -506,19 +512,24 @@ export default function CallScreen() {
         {/* ─ Secondary options (scroll to see) ─ */}
 
         <View style={s.formSecondary}>
-          <Text style={s.fieldLabel}>WHAT I NEED HELP WITH <Text style={s.fieldLabelOpt}>· optional</Text></Text>
+          <Text style={s.fieldLabel}>{t('goal_label')} <Text style={s.fieldLabelOpt}>{t('goal_optional')}</Text></Text>
           <TextInput
-            style={[s.input, { marginBottom: 8 }]} placeholder="Describe what you need…"
+            style={[s.input, { marginBottom: 8 }]} placeholder={t('goal_placeholder')}
             placeholderTextColor={colors.muted} value={goal} onChangeText={setGoal}
           />
           <View style={s.goalChips}>
-            {['Billing issue', 'Cancel subscription', 'Refund request', 'Technical support'].map(g => (
+            {([
+              { value: 'Billing issue',       label: t('goal_billing') },
+              { value: 'Cancel subscription', label: t('goal_cancel') },
+              { value: 'Refund request',      label: t('goal_refund') },
+              { value: 'Technical support',   label: t('goal_support') },
+            ] as const).map(chip => (
               <TouchableOpacity
-                key={g}
-                style={[s.goalChip, goal === g && s.goalChipActive]}
-                onPress={() => setGoal(goal === g ? '' : g)}
+                key={chip.value}
+                style={[s.goalChip, goal === chip.value && s.goalChipActive]}
+                onPress={() => setGoal(goal === chip.value ? '' : chip.value)}
               >
-                <Text style={[s.goalChipTxt, goal === g && s.goalChipTxtActive]}>{g}</Text>
+                <Text style={[s.goalChipTxt, goal === chip.value && s.goalChipTxtActive]}>{chip.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -528,7 +539,7 @@ export default function CallScreen() {
         {/* Recent session pills */}
         {templates.length > 0 && (
           <View style={s.recentSection}>
-            <Text style={[s.fieldLabel, { paddingHorizontal: 22, marginBottom: 10 }]}>RECENT</Text>
+            <Text style={[s.fieldLabel, { paddingHorizontal: 22, marginBottom: 10 }]}>{t('recent')}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}

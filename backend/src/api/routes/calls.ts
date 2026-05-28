@@ -76,7 +76,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
   // GET /users/:id — get user profile
   fastify.get<{ Params: { id: string } }>('/users/:id', async (request, reply) => {
     const user = await queryOne(
-      `SELECT id, email, name, phone_number, birthday FROM users WHERE id = $1`,
+      `SELECT id, email, name, phone_number, birthday, language FROM users WHERE id = $1`,
       [request.params.id]
     );
     if (!user) return reply.status(404).send({ error: 'User not found' });
@@ -104,7 +104,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
       await query(`UPDATE users SET ${fields.join(', ')} WHERE id = $${idx}`, values);
     }
 
-    const user = await queryOne(`SELECT id, email, name, phone_number, birthday FROM users WHERE id = $1`, [id]);
+    const user = await queryOne(`SELECT id, email, name, phone_number, birthday, language FROM users WHERE id = $1`, [id]);
     if (!user) return reply.status(404).send({ error: 'User not found' });
     return user;
   });
