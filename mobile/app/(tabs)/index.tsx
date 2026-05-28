@@ -453,7 +453,7 @@ export default function CallScreen() {
                     onPress={() => {
                       justSelectedRef.current = true;
                       setCompany(item.company);
-                      setPhone(item.phone);
+                      setPhone(item.phone.startsWith('+1') ? item.phone.slice(2) : item.phone);
                       setSuggestions([]);
                       setShowSuggestions(false);
                     }}
