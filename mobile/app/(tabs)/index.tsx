@@ -273,6 +273,7 @@ export default function CallScreen() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const statsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const justSelectedRef = useRef(false);
   const [loading, setLoading]     = useState(false);
   const [templates, setTemplates] = useState<CallTemplate[]>([]);
   const [sseUrl, setSseUrl]       = useState<string | null>(null);
@@ -339,7 +340,8 @@ export default function CallScreen() {
 
   useEffect(() => {
     if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
-    if (company.trim().length < 2) { setSuggestions([]); return; }
+    if (justSelectedRef.current) { justSelectedRef.current = false; return; }
+    if (company.trim().length < 2) { setSuggestions([]); setShowSuggestions(false); return; }
     suggestTimerRef.current = setTimeout(() => {
       getCompanySuggestions(company.trim()).then(res => {
         setSuggestions(res);
@@ -435,8 +437,6 @@ export default function CallScreen() {
                 style={s.iconInputField} placeholder="Company name"
                 placeholderTextColor={colors.muted} value={company}
                 onChangeText={setCompany}
-                onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
               />
               {company.length > 0 && (
                 <TouchableOpacity onPress={() => { setCompany(''); setSuggestions([]); setCompanyStats(null); }}>
@@ -451,6 +451,7 @@ export default function CallScreen() {
                     key={`${item.company}-${i}`}
                     style={[s.dropdownItem, i < suggestions.length - 1 && s.dropdownItemBorder]}
                     onPress={() => {
+                      justSelectedRef.current = true;
                       setCompany(item.company);
                       setPhone(item.phone);
                       setSuggestions([]);
@@ -585,16 +586,16 @@ const s = StyleSheet.create({
   formSecondary: { paddingHorizontal: 22, paddingTop: 8, marginBottom: 8 },
   recentSection: { marginBottom: 40 },
 
-  companyWrap:    { zIndex: 20, marginBottom: 12 },
+  companyWrap:    { marginBottom: 12 },
   iconInput:      { flexDirection: 'row', alignItems: 'center', height: 56, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 16 },
   iconInputIcon:  { marginRight: 10 },
   iconInputField: { flex: 1, color: colors.text, fontSize: 15 },
 
-  dropdown:         { position: 'absolute', top: 60, left: 0, right: 0, backgroundColor: '#0f172a', borderWidth: 1, borderColor: colors.border, borderRadius: 14, zIndex: 30, elevation: 8, overflow: 'hidden' },
-  dropdownItem:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
+  dropdown:          { marginTop: 4, backgroundColor: '#0f172a', borderWidth: 1, borderColor: colors.border, borderRadius: 14, overflow: 'hidden' },
+  dropdownItem:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
   dropdownItemBorder:{ borderBottomWidth: 1, borderBottomColor: colors.border },
-  dropdownCompany:  { fontSize: 14, fontWeight: '600', color: colors.text },
-  dropdownPhone:    { fontSize: 11, color: colors.muted, marginTop: 1 },
+  dropdownCompany:   { fontSize: 14, fontWeight: '600', color: colors.text },
+  dropdownPhone:     { fontSize: 11, color: colors.muted, marginTop: 1 },
   statsHint:      { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -6, marginBottom: 10, paddingHorizontal: 4 },
   statsHintTxt:   { fontSize: 11, color: colors.muted },
 
