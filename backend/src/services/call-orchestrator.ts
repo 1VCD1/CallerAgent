@@ -82,10 +82,20 @@ export class CallOrchestrator {
   }
 
   async start(): Promise<void> {
-    const twilioCallSid = await initiateOutboundCall({
-      to: this.call.phoneNumber,
-      callId: this.call.id,
-    });
+    let twilioCallSid: string;
+    try {
+      twilioCallSid = await initiateOutboundCall({
+        to: this.call.phoneNumber,
+        callId: this.call.id,
+      });
+    } catch (err) {
+      await query(
+        `UPDATE calls SET status = 'FAILED', ended_at = NOW(), ended_reason = 'dial_failed' WHERE id = $1`,
+        [this.call.id]
+      );
+      emitCallStatus(this.call.id, 'FAILED');
+      throw err;
+    }
 
     await query(`UPDATE calls SET twilio_call_sid = $1 WHERE id = $2`, [
       twilioCallSid,
