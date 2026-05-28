@@ -18,7 +18,7 @@ const zhTW = {
   goal_cancel: '取消訂閱',
   goal_refund: '申請退款',
   goal_support: '技術支援',
-  recent: '最近',
+  recent: '最近通話',
   missing_info_title: '資料不完整',
   missing_info_body: '公司名稱和電話號碼為必填。',
   daily_limit_title: '已達每日上限',

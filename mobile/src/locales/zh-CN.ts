@@ -18,7 +18,7 @@ const zhCN = {
   goal_cancel: '取消订阅',
   goal_refund: '申请退款',
   goal_support: '技术支持',
-  recent: '最近',
+  recent: '最近通话',
   missing_info_title: '信息不完整',
   missing_info_body: '公司名称和电话号码为必填项。',
   daily_limit_title: '已达每日上限',
