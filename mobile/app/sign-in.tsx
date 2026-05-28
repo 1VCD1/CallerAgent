@@ -17,6 +17,7 @@ export default function SignInScreen() {
     androidClientId: '765448201002-al748nhq23aqq7qjhqvhdqahqisabpom.apps.googleusercontent.com',
   });
 
+
   useEffect(() => {
     if (response?.type !== 'success') return;
     const idToken = (response.params as any).id_token;
@@ -42,7 +43,7 @@ export default function SignInScreen() {
 
         <TouchableOpacity
           style={[s.googleBtn, (!request || loading) && s.disabled]}
-          onPress={() => promptAsync()}
+          onPress={() => promptAsync({ prompt: 'select_account' } as any)}
           disabled={!request || loading}
         >
           {loading
