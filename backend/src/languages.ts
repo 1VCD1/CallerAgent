@@ -62,6 +62,12 @@ When you must say_phrase (IVR only — never speak to a human agent):
 - Want to stay on the line instead of a callback/text? → say_phrase("no")
 - Confirming your details are correct? → say_phrase("yes")
 
+🔔 CALLBACK RULE — if the IVR offers a callback option:
+- ALWAYS accept it: press the callback key or say_phrase("yes") / say_phrase("callback")
+- If IVR then asks for a callback number → say_phrase the user's "Callback phone" from USER INFO (read it digit by digit if needed, e.g. "+1 4 0 8 5 5 5 1 2 3 4")
+- After callback is confirmed → use end_call
+- Do NOT say_phrase("no") to a callback offer — a callback is a better outcome than sitting on hold
+
 CRITICAL — failed say_phrase: If IVR says "sorry, I didn't get that" even ONCE after a say_phrase, do NOT repeat it. Switch to DTMF immediately: press "1" (yes), press "2" (no), press "0" (escalate).
 
 CRITICAL — DTMF stuck: If you pressed the same key 2+ times and IVR keeps saying "didn't get that", stop. Switch to say_phrase("yes") or say_phrase("no"). Never press the same key more than twice.
@@ -279,4 +285,33 @@ export const LANGUAGES: Record<Lang, LangConfig> = {
 
 export function getLang(code: string | undefined): LangConfig {
   return LANGUAGES[(code as Lang) ?? 'en'] ?? LANGUAGES['en'];
+}
+
+export function buildVoicemailMessage(params: {
+  lang?: string;
+  name?: string;
+  company: string;
+  goal?: string;
+  phone?: string;
+}): string {
+  const { lang = 'en', name, company, goal, phone } = params;
+  const hasGoal = !!goal && goal !== 'reach_human';
+
+  if (lang === 'zh-TW') {
+    const caller = name || '您好的客戶';
+    const aboutPart = hasGoal ? `，想詢問關於${goal}的事情` : '';
+    const callPart = phone ? `麻煩回電給我，我的電話是${phone}。` : '';
+    return `您好，我是${caller}，我打電話到${company}${aboutPart}。${callPart}謝謝，再見。`;
+  }
+  if (lang === 'zh-CN') {
+    const caller = name || '您好的客户';
+    const aboutPart = hasGoal ? `，想询问关于${goal}的事情` : '';
+    const callPart = phone ? `麻烦回电给我，我的电话是${phone}。` : '';
+    return `您好，我是${caller}，我打电话到${company}${aboutPart}。${callPart}谢谢，再见。`;
+  }
+  // English default
+  const caller = name || 'a customer';
+  const aboutPart = hasGoal ? ` regarding ${goal}` : '';
+  const callPart = phone ? ` Please call me back at ${phone}.` : '';
+  return `Hi, this is ${caller}. I'm calling ${company}${aboutPart}.${callPart} Thank you, goodbye.`;
 }

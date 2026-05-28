@@ -130,7 +130,8 @@ export class CallOrchestrator {
 
   // Call-level cache for data that doesn't change mid-call
   private cachedMemories: import('../types').MemoryPattern[] | null = null;
-  private cachedIvrNotes: string | null | undefined = undefined; // undefined = not loaded yet
+  private cachedIvrNotes: string | null | undefined = undefined;    // undefined = not loaded yet
+  private cachedCompanyNote: string | null | undefined = undefined; // undefined = not loaded yet
   private cachedUserRow: { name?: string; birthday?: string; language?: string } | null = null;
   private cachedActionPatterns: import('./memory').ActionPattern[] | null = null;
   // Updated by the Gather webhook after each turn so prefetch has real previousActions
@@ -144,7 +145,16 @@ export class CallOrchestrator {
       console.log(`[Orchestrator] Speaker change detected for call ${this.call.id} — will pass to LLM`);
     }
 
-    const detection = detectHumanCombined(text, this.audioAnalyzer.analyze());
+    const audioNow = this.audioAnalyzer.analyze();
+
+    // Ring-tone pickup: transfer ring heard → someone answered → almost certainly human
+    if (audioNow?.postRingPickup && this.stateMachine.can('human_detected')) {
+      console.log(`[Orchestrator] Post-ring-tone pickup for call ${this.call.id} — escalating immediately`);
+      this.handleHumanDetected();
+      return;
+    }
+
+    const detection = detectHumanCombined(text, audioNow);
     if (
       detection.isHuman &&
       detection.confidence >= HUMAN_CONFIDENCE_THRESHOLD &&
@@ -238,6 +248,14 @@ export class CallOrchestrator {
 
   setCachedIvrNotes(notes: string | null): void {
     this.cachedIvrNotes = notes;
+  }
+
+  getCachedCompanyNote(): string | null | undefined {
+    return this.cachedCompanyNote;
+  }
+
+  setCachedCompanyNote(note: string | null): void {
+    this.cachedCompanyNote = note;
   }
 
   getCachedUserRow(): { name?: string; birthday?: string; language?: string } | null {

@@ -2,13 +2,13 @@ import { FastifyPluginAsync } from 'fastify';
 import * as https from 'https';
 import twilio from 'twilio';
 import { activeOrchestrators } from './calls';
-import { query } from '../../db/client';
+import { query, queryOne } from '../../db/client';
 import { getMemoryPatterns, getActionPatterns } from '../../services/memory';
 import { decideLLMAction } from '../../services/llm-engine';
 import { config } from '../../config';
 import { CallContext, ActionRecord, CallStatus } from '../../types';
-import { getLang } from '../../languages';
-import { isOutsideBusinessHours, extractMenuKeys } from '../../services/human-detector';
+import { getLang, buildVoicemailMessage } from '../../languages';
+import { isOutsideBusinessHours, isCallbackOffer, isVoicemailGreeting, isInvalidOrDisconnected, extractMenuKeys } from '../../services/human-detector';
 import { generateCallSummary, getCompanyIvrNotes } from '../../services/call-summarizer';
 import { emitCallStatus } from '../../services/call-events';
 
@@ -108,6 +108,29 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       return;
     }
 
+    // Invalid / disconnected number
+    if (spokenText && isInvalidOrDisconnected(spokenText)) {
+      console.log(`[Gather] Invalid/disconnected number detected — ending call ${callId}`);
+      await query(
+        `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'invalid_number' WHERE id = $1`,
+        [callId]
+      );
+      emitCallStatus(callId, 'ENDED');
+      if (orchestrator) activeOrchestrators.delete(callId);
+      reply.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
+      return;
+    }
+
+    // Callback offer detected — mark in DB so mobile can show the right label;
+    // the LLM will accept it via the CALLBACK RULE in the system prompt
+    if (spokenText && isCallbackOffer(spokenText)) {
+      console.log(`[Gather] Callback offer detected for call ${callId} — LLM will accept`);
+      await query(
+        `UPDATE calls SET ended_reason = 'callback_offered' WHERE id = $1 AND ended_reason IS NULL`,
+        [callId]
+      );
+    }
+
     // Get full transcript and recent confidence history
     const transcripts = await query<{ text: string; human_confidence: number | null }>(
       `SELECT text, human_confidence FROM transcripts WHERE call_id = $1 ORDER BY timestamp ASC`,
@@ -143,8 +166,8 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
     }
 
     // Get call info
-    const callRow = await query<{ company: string; goal: string; status: string; user_id: string }>(
-      `SELECT company, goal, status, user_id FROM calls WHERE id = $1`,
+    const callRow = await query<{ company: string; goal: string; status: string; user_id: string; user_phone_number: string | null }>(
+      `SELECT company, goal, status, user_id, user_phone_number FROM calls WHERE id = $1`,
       [callId]
     );
     if (!callRow[0]) {
@@ -173,21 +196,61 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
     let memories = orchestrator?.getCachedMemories() ?? null;
     let userRowData = orchestrator?.getCachedUserRow() ?? null;
     let companyIvrNotes: string | null;
+    let userCompanyNote: string | null;
     const ivrNotesCached = orchestrator?.getCachedIvrNotes();
+    const noteCached = orchestrator?.getCachedCompanyNote();
 
     const fetchPromises: Promise<any>[] = [];
     if (!memories) fetchPromises.push(getMemoryPatterns(company, goal).then(m => { memories = m; if (orchestrator) orchestrator['cachedMemories'] = m; }));
     if (!userRowData) fetchPromises.push(query<{ name: string; birthday: string; language: string }>(`SELECT name, birthday, language FROM users WHERE id = $1`, [user_id]).then(r => { userRowData = r[0] ?? null; if (orchestrator && r[0]) orchestrator.setCachedUserRow(r[0]); }));
     if (ivrNotesCached === undefined) fetchPromises.push(getCompanyIvrNotes(company).then(n => { companyIvrNotes = n; if (orchestrator) orchestrator.setCachedIvrNotes(n); }));
     else companyIvrNotes = ivrNotesCached;
+    if (noteCached === undefined) fetchPromises.push(queryOne<{ note: string }>(`SELECT note FROM user_company_notes WHERE user_id = $1 AND LOWER(company) = LOWER($2)`, [user_id, company]).then(r => { userCompanyNote = r?.note ?? null; if (orchestrator) orchestrator.setCachedCompanyNote(userCompanyNote!); }));
+    else userCompanyNote = noteCached;
 
     // Action patterns fetched fresh each turn (cheap aggregate query, changes across calls)
     const actionPatterns = await getActionPatterns(company);
 
     if (fetchPromises.length > 0) await Promise.all(fetchPromises);
     companyIvrNotes = companyIvrNotes! ?? ivrNotesCached ?? null;
+    userCompanyNote = userCompanyNote! ?? noteCached ?? null;
 
     const langConfig = getLang((userRowData as any)?.language);
+
+    // Voicemail detected — leave a message on behalf of the user then hang up.
+    // Must happen after user data is loaded so we have their name and callback number.
+    if (spokenText && isVoicemailGreeting(spokenText)) {
+      const vmPhone = callRow[0].user_phone_number ?? null;
+      const vmLang  = (userRowData as any)?.language ?? 'en';
+      const vmMsg   = buildVoicemailMessage({
+        lang: vmLang,
+        name: (userRowData as any)?.name ?? undefined,
+        company,
+        goal,
+        phone: vmPhone ?? undefined,
+      });
+      console.log(`[Gather] Voicemail detected — ${vmPhone ? 'leaving message' : 'hanging up (no callback number)'} for call ${callId}`);
+      await Promise.all([
+        query(`INSERT INTO transcripts (call_id, speaker, text) VALUES ($1, 'AI', $2)`, [callId, vmMsg]),
+        query(`UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = $2 WHERE id = $1`,
+              [callId, vmPhone ? 'voicemail_left' : 'voicemail']),
+      ]);
+      emitCallStatus(callId, 'ENDED');
+      if (orchestrator) activeOrchestrators.delete(callId);
+      reply.type('text/xml').send(
+        vmPhone
+          ? `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Pause length="3"/>
+  <Say voice="${langConfig.ttsVoice}">${escapeXml(vmMsg)}</Say>
+  <Pause length="1"/>
+  <Hangup/>
+</Response>`
+          : `<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`
+      );
+      return;
+    }
+
     const recentFailures = previousActions.filter(a => !a.success).map(a => `${a.action}(${a.value})`);
     const userInfoObj = userRowData ? { name: (userRowData as any).name ?? undefined, birthday: (userRowData as any).birthday ?? undefined } : undefined;
 
@@ -270,6 +333,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       speakerChanged: orchestrator?.getSpeakerChanged() ?? false,
       availableMenuKeys: availableMenuKeys.length > 0 ? availableMenuKeys : undefined,
       companyIvrNotes: companyIvrNotes ?? undefined,
+      userCompanyNote: userCompanyNote ?? undefined,
       currentIvrUtterance: spokenText || undefined,
       consecutiveWaits,
       consecutiveSameKey,
@@ -381,6 +445,24 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         `INSERT INTO transcripts (call_id, speaker, text) VALUES ($1, 'AI', $2)`,
         [callId, actionText]
       );
+
+      // When LLM ends the call, classify why so the session shows the right label.
+      // Check recent transcripts because the triggering utterance may have come earlier.
+      if (safeAction === 'end_call') {
+        const recentText = transcripts.slice(-5).map(t => t.text).join(' ');
+        const endReason =
+          isVoicemailGreeting(recentText)        ? 'voicemail'
+          : isOutsideBusinessHours(recentText)   ? 'outside_hours'
+          : isInvalidOrDisconnected(recentText)  ? 'invalid_number'
+          : null;
+        if (endReason) {
+          await query(
+            `UPDATE calls SET ended_reason = $1 WHERE id = $2 AND ended_reason IS NULL`,
+            [endReason, callId]
+          );
+          console.log(`[Gather] end_call classified as '${endReason}' for call ${callId}`);
+        }
+      }
 
       twiml = buildActionTwiML(safeAction, safeValue, gatherUrl, langConfig.ttsVoice);
     } catch (err) {

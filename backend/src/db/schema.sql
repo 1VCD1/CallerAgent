@@ -83,6 +83,18 @@ CREATE TABLE IF NOT EXISTS action_history (
 
 CREATE INDEX IF NOT EXISTS idx_action_history_call_id ON action_history(call_id);
 
+-- User notes per company (user-written tips that feed back into the LLM context)
+CREATE TABLE IF NOT EXISTS user_company_notes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  company TEXT NOT NULL,
+  note TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, company)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_company_notes_user ON user_company_notes(user_id);
+
 -- Company IVR Notes (post-call LLM summaries for future calls to same company)
 CREATE TABLE IF NOT EXISTS company_ivr_notes (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

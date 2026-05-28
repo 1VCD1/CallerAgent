@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
 import { getCalls, endCall } from '@/api';
 import { useCallStore } from '@/store';
+import { getOutcomeConfig, NON_FAILURE_REASONS } from '@/outcome';
 
 function timeAgo(d: string) {
   const m = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
@@ -26,7 +27,7 @@ type Filter = 'all' | 'success' | 'failed';
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all',     label: 'All' },
   { key: 'success', label: 'Reached human' },
-  { key: 'failed',  label: 'Failed' },
+  { key: 'failed',  label: 'Not reached' },
 ];
 
 export default function HistoryScreen() {
@@ -49,16 +50,17 @@ export default function HistoryScreen() {
 
   const filtered = callHistory.filter(c => {
     if (filter === 'success') return c.human_reached;
-    if (filter === 'failed')  return c.status === 'FAILED' || (c.status === 'ENDED' && !c.human_reached);
+    if (filter === 'failed')  return !c.human_reached && !ACTIVE_STATUSES.includes(c.status) && !NON_FAILURE_REASONS.has(c.ended_reason ?? '');
     return true;
   });
 
-  // Stats
-  const total      = callHistory.length;
-  const humanReach = callHistory.filter(c => c.human_reached);
-  const waits      = humanReach.map(c => c.wait_duration_seconds).filter((w): w is number => w != null);
-  const avgWait    = waits.length ? Math.round(waits.reduce((a, b) => a + b, 0) / waits.length) : null;
-  const successRate = total > 0 ? Math.round((humanReach.length / total) * 100) : null;
+  // Stats — success rate excludes non-failure reasons (closed, voicemail, etc.)
+  const total         = callHistory.length;
+  const humanReach    = callHistory.filter(c => c.human_reached);
+  const countableBase = callHistory.filter(c => !ACTIVE_STATUSES.includes(c.status) && !NON_FAILURE_REASONS.has(c.ended_reason ?? ''));
+  const waits         = humanReach.map(c => c.wait_duration_seconds).filter((w): w is number => w != null);
+  const avgWait       = waits.length ? Math.round(waits.reduce((a, b) => a + b, 0) / waits.length) : null;
+  const successRate   = countableBase.length > 0 ? Math.round((humanReach.length / countableBase.length) * 100) : null;
 
   return (
     <SafeAreaView style={s.safe}>
@@ -127,9 +129,11 @@ export default function HistoryScreen() {
         renderItem={({ item }) => {
           const cfg      = STATUS[item.status] ?? STATUS['ENDED'];
           const isActive = ACTIVE_STATUSES.includes(item.status);
+          const outcome  = getOutcomeConfig(item);
           const accentColor = item.human_reached ? colors.green
                             : item.status === 'FAILED' ? colors.red
-                            : colors.border;
+                            : isActive ? cfg.color
+                            : outcome.color === '#64748b' ? colors.border : outcome.color;
           return (
             <TouchableOpacity
               style={[s.card, { borderLeftColor: accentColor }]}
@@ -139,22 +143,15 @@ export default function HistoryScreen() {
               {/* Row 1: company + outcome pill */}
               <View style={s.cardTop}>
                 <Text style={s.company} numberOfLines={1}>{item.company}</Text>
-                {item.human_reached ? (
-                  <View style={s.outcomePillGreen}>
-                    <Ionicons name="checkmark-circle" size={11} color={colors.green} />
-                    <Text style={s.outcomePillGreenTxt}>Human reached</Text>
-                  </View>
-                ) : item.status === 'FAILED' ? (
-                  <View style={s.outcomePillRed}>
-                    <Text style={s.outcomePillRedTxt}>Failed</Text>
-                  </View>
-                ) : isActive ? (
+                {isActive ? (
                   <View style={[s.badge, { backgroundColor: cfg.bg }]}>
                     <Text style={[s.badgeTxt, { color: cfg.color }]}>{cfg.label}</Text>
                   </View>
                 ) : (
-                  <View style={s.outcomePillNeutral}>
-                    <Text style={s.outcomePillNeutralTxt}>No human</Text>
+                  <View style={[s.outcomePill, { backgroundColor: outcome.bg, borderColor: outcome.border }]}>
+                    {outcome.icon && <Ionicons name={outcome.icon as any} size={11} color={outcome.color} />}
+                    {item.human_reached && <Ionicons name="checkmark-circle" size={11} color={outcome.color} />}
+                    <Text style={[s.outcomePillTxt, { color: outcome.color }]}>{outcome.label}</Text>
                   </View>
                 )}
               </View>
@@ -238,12 +235,8 @@ const s = StyleSheet.create({
   badge:    { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 1 },
   badgeTxt: { fontSize: 11, fontWeight: '600' },
 
-  outcomePillGreen:    { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(37,211,102,0.12)', borderWidth: 1, borderColor: 'rgba(37,211,102,0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99 },
-  outcomePillGreenTxt: { fontSize: 11, color: colors.green, fontWeight: '600' },
-  outcomePillRed:      { backgroundColor: 'rgba(239,68,68,0.10)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99 },
-  outcomePillRedTxt:   { fontSize: 11, color: colors.red, fontWeight: '600' },
-  outcomePillNeutral:    { backgroundColor: 'rgba(100,116,139,0.10)', borderWidth: 1, borderColor: 'rgba(100,116,139,0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99 },
-  outcomePillNeutralTxt: { fontSize: 11, color: colors.muted, fontWeight: '600' },
+  outcomePill:    { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99 },
+  outcomePillTxt: { fontSize: 11, fontWeight: '600' },
 
   cardMeta:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
   statChip:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4 },

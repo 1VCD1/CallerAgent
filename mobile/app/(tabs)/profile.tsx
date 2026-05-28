@@ -120,14 +120,9 @@ export default function ProfileScreen() {
               icon="call-outline"
               label="Callback phone"
               value={phone || 'Not set'}
-              onPress={editMode ? undefined : () => setEditMode(true)}
-              valueColor={phone ? colors.text : colors.muted}
-            />
-            <SettingDivider />
-            <SettingRow
-              icon="language-outline"
-              label="Language preference"
-              value="English"
+              onPress={() => setEditMode(v => !v)}
+              valueColor={phone ? colors.text : colors.red}
+              chevronDir={editMode ? 'up' : 'forward'}
             />
           </View>
 
@@ -139,7 +134,7 @@ export default function ProfileScreen() {
 
               <Field label="Full Name"      placeholder="John Doe"          value={name}     onChangeText={setName} />
               <Field label="Callback Phone" placeholder="234 567 8900"      value={phone}    onChangeText={setPhone} keyboardType="phone-pad"
-                hint="Your phone rings when the AI finds a live rep" />
+                hint="Your phone rings when the AI finds a live rep" required />
               <View style={s.fieldWrap}>
                 <Text style={s.fieldLabel}>DATE OF BIRTH</Text>
                 <TextInput
@@ -177,7 +172,7 @@ export default function ProfileScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity style={s.cancelBtn} onPress={() => setEditMode(false)}>
-                <Text style={s.cancelBtnTxt}>Cancel</Text>
+                <Text style={s.cancelBtnTxt}>Collapse</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -275,8 +270,8 @@ export default function ProfileScreen() {
   );
 }
 
-function SettingRow({ icon, label, value, onPress, valueColor }: {
-  icon: string; label: string; value?: string; onPress?: () => void; valueColor?: string;
+function SettingRow({ icon, label, value, onPress, valueColor, chevronDir = 'forward' }: {
+  icon: string; label: string; value?: string; onPress?: () => void; valueColor?: string; chevronDir?: 'forward' | 'up';
 }) {
   return (
     <TouchableOpacity style={sr.row} onPress={onPress} disabled={!onPress} activeOpacity={0.7}>
@@ -285,7 +280,7 @@ function SettingRow({ icon, label, value, onPress, valueColor }: {
         <Text style={sr.label}>{label}</Text>
         {value && <Text style={[sr.value, valueColor ? { color: valueColor } : {}]}>{value}</Text>}
       </View>
-      {onPress && <Ionicons name="chevron-forward" size={15} color={colors.muted} />}
+      {onPress && <Ionicons name={chevronDir === 'up' ? 'chevron-up' : 'chevron-forward'} size={15} color={colors.muted} />}
     </TouchableOpacity>
   );
 }
@@ -294,10 +289,13 @@ function SettingDivider() {
   return <View style={{ height: 1, backgroundColor: colors.border, marginLeft: 46 }} />;
 }
 
-function Field({ label, hint, ...p }: { label: string; hint?: string } & React.ComponentProps<typeof TextInput>) {
+function Field({ label, hint, required, ...p }: { label: string; hint?: string; required?: boolean } & React.ComponentProps<typeof TextInput>) {
   return (
     <View style={s.fieldWrap}>
-      <Text style={s.fieldLabel}>{label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 }}>
+        <Text style={s.fieldLabel}>{label}</Text>
+        {required && <Text style={s.fieldRequired}>REQUIRED</Text>}
+      </View>
       <TextInput style={s.input} placeholderTextColor={colors.muted} {...p} />
       {hint && <Text style={s.fieldHint}>{hint}</Text>}
     </View>
@@ -326,16 +324,17 @@ const s = StyleSheet.create({
   editCardTitle:{ fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 4 },
   editCardHint: { fontSize: 12, color: colors.muted, marginBottom: 16, lineHeight: 17 },
 
-  fieldWrap:  { marginBottom: 16 },
-  fieldLabel: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.8, marginBottom: 8 },
-  input:      { height: 52, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: colors.border, borderRadius: 14, paddingHorizontal: 14, color: colors.text, fontSize: 15 },
-  fieldHint:  { fontSize: 11, color: colors.muted, marginTop: 5, lineHeight: 16 },
+  fieldWrap:     { marginBottom: 16 },
+  fieldLabel:    { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.8 },
+  fieldRequired: { fontSize: 9, fontWeight: '800', color: colors.red, letterSpacing: 0.6, backgroundColor: 'rgba(239,68,68,0.10)', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
+  input:         { height: 52, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: colors.border, borderRadius: 14, paddingHorizontal: 14, color: colors.text, fontSize: 15 },
+  fieldHint:     { fontSize: 11, color: colors.muted, marginTop: 5, lineHeight: 16 },
 
-  saveBtnWrap: { borderRadius: 14, overflow: 'hidden' },
-  saveBtn:     { paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
-  saveBtnTxt:  { color: '#fff', fontSize: 15, fontWeight: '700' },
-  cancelBtn:   { alignItems: 'center', paddingVertical: 12 },
-  cancelBtnTxt:{ fontSize: 14, color: colors.muted },
+  saveBtnWrap: { borderRadius: 14, overflow: 'hidden', marginTop: 4 },
+  saveBtn:     { paddingVertical: 18, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  saveBtnTxt:  { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
+  cancelBtn:   { alignItems: 'center', paddingVertical: 13, marginTop: 4, borderWidth: 1, borderColor: colors.border, borderRadius: 12 },
+  cancelBtnTxt:{ fontSize: 14, fontWeight: '600', color: colors.muted },
 
   devToggle:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 14, paddingHorizontal: 22 },
   devToggleTxt: { fontSize: 13, fontWeight: '600', color: colors.muted },

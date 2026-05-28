@@ -5,13 +5,14 @@ import {
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
-import { startCall, getCalls, getCall, endCall, getApiUrl } from '@/api';
+import { startCall, getCalls, getCall, endCall, getApiUrl, getCompanyStats, getCompanySuggestions } from '@/api';
 import { useCallStore } from '@/store';
 import { useSSE } from '@/hooks/useSSE';
-import type { Call } from '@/api';
+import type { Call, CompanyStats } from '@/api';
 
 const TERMINAL = new Set(['ENDED', 'FAILED']);
 
@@ -263,9 +264,15 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
 // ─── Home Screen ──────────────────────────────────────────────────────────────
 
 export default function CallScreen() {
+  const router = useRouter();
   const [company, setCompany]     = useState('');
   const [phone, setPhone]         = useState('');
   const [goal, setGoal]           = useState('');
+  const [companyStats, setCompanyStats] = useState<CompanyStats | null>(null);
+  const [suggestions, setSuggestions] = useState<Array<{ company: string; phone: string }>>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const statsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loading, setLoading]     = useState(false);
   const [templates, setTemplates] = useState<CallTemplate[]>([]);
   const [sseUrl, setSseUrl]       = useState<string | null>(null);
@@ -321,6 +328,27 @@ export default function CallScreen() {
 
   useEffect(() => { refresh(); loadTemplates(); }, []);
 
+  useEffect(() => {
+    if (statsTimerRef.current) clearTimeout(statsTimerRef.current);
+    if (company.trim().length < 2) { setCompanyStats(null); return; }
+    statsTimerRef.current = setTimeout(() => {
+      getCompanyStats(company.trim()).then(setCompanyStats).catch(() => setCompanyStats(null));
+    }, 500);
+    return () => { if (statsTimerRef.current) clearTimeout(statsTimerRef.current); };
+  }, [company]);
+
+  useEffect(() => {
+    if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+    if (company.trim().length < 2) { setSuggestions([]); return; }
+    suggestTimerRef.current = setTimeout(() => {
+      getCompanySuggestions(company.trim()).then(res => {
+        setSuggestions(res);
+        setShowSuggestions(res.length > 0);
+      }).catch(() => setSuggestions([]));
+    }, 200);
+    return () => { if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current); };
+  }, [company]);
+
   const handleStart = async () => {
     if (submitting.current) return;
     if (!company.trim() || !phone.trim()) {
@@ -341,6 +369,17 @@ export default function CallScreen() {
           const stuck = await getCall(e.callId).catch(() => null);
           if (stuck) setActiveCall(stuck);
         } else { await refresh(); }
+      } else if (e.code === 'DAILY_LIMIT_REACHED') {
+        Alert.alert('Daily limit reached', e.message ?? 'You\'ve reached the daily call limit. Try again in a few hours.');
+      } else if (e.code === 'MISSING_CALLBACK_PHONE') {
+        Alert.alert(
+          'Callback phone required',
+          'Add your callback phone number in the You tab — we need it to connect you when a human answers.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Go to Profile', onPress: () => router.push('/(tabs)/profile') },
+          ]
+        );
       } else {
         Alert.alert('Error', e.message ?? 'Failed to start call');
       }
@@ -389,15 +428,58 @@ export default function CallScreen() {
         {/* Primary inputs + CTA — all visible without scrolling */}
         <View style={s.form}>
 
-          <View style={s.iconInput}>
-            <Ionicons name="business-outline" size={18} color={colors.muted} style={s.iconInputIcon} />
-            <TextInput
-              style={s.iconInputField} placeholder="Company name"
-              placeholderTextColor={colors.muted} value={company} onChangeText={setCompany}
-            />
+          <View style={s.companyWrap}>
+            <View style={s.iconInput}>
+              <Ionicons name="business-outline" size={18} color={colors.muted} style={s.iconInputIcon} />
+              <TextInput
+                style={s.iconInputField} placeholder="Company name"
+                placeholderTextColor={colors.muted} value={company}
+                onChangeText={setCompany}
+                onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              />
+              {company.length > 0 && (
+                <TouchableOpacity onPress={() => { setCompany(''); setSuggestions([]); setCompanyStats(null); }}>
+                  <Ionicons name="close-circle" size={17} color={colors.muted} />
+                </TouchableOpacity>
+              )}
+            </View>
+            {showSuggestions && suggestions.length > 0 && (
+              <View style={s.dropdown}>
+                {suggestions.map((item, i) => (
+                  <TouchableOpacity
+                    key={`${item.company}-${i}`}
+                    style={[s.dropdownItem, i < suggestions.length - 1 && s.dropdownItemBorder]}
+                    onPress={() => {
+                      setCompany(item.company);
+                      setPhone(item.phone);
+                      setSuggestions([]);
+                      setShowSuggestions(false);
+                    }}
+                  >
+                    <Ionicons name="time-outline" size={14} color={colors.muted} style={{ marginRight: 8 }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.dropdownCompany}>{item.company}</Text>
+                      <Text style={s.dropdownPhone}>{item.phone}</Text>
+                    </View>
+                    <Ionicons name="arrow-up-outline" size={13} color={colors.muted} style={{ transform: [{ rotate: '45deg' }] }} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
 
-          <View style={s.iconInput}>
+          {companyStats && companyStats.total >= 1 && (
+            <View style={s.statsHint}>
+              <Ionicons name="bar-chart-outline" size={11} color={colors.muted} />
+              <Text style={s.statsHintTxt}>
+                {companyStats.total} call{companyStats.total > 1 ? 's' : ''} · {companyStats.successPct}% success
+                {companyStats.avgWaitSecs ? ` · avg ${Math.round(companyStats.avgWaitSecs / 60)}m wait` : ''}
+              </Text>
+            </View>
+          )}
+
+          <View style={[s.iconInput, { marginBottom: 12 }]}>
             <Ionicons name="call-outline" size={18} color={colors.muted} style={s.iconInputIcon} />
             <TextInput
               style={s.iconInputField} placeholder="Phone number"
@@ -503,9 +585,18 @@ const s = StyleSheet.create({
   formSecondary: { paddingHorizontal: 22, paddingTop: 8, marginBottom: 8 },
   recentSection: { marginBottom: 40 },
 
-  iconInput:      { flexDirection: 'row', alignItems: 'center', height: 56, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 16, marginBottom: 12 },
+  companyWrap:    { zIndex: 20, marginBottom: 12 },
+  iconInput:      { flexDirection: 'row', alignItems: 'center', height: 56, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 16 },
   iconInputIcon:  { marginRight: 10 },
   iconInputField: { flex: 1, color: colors.text, fontSize: 15 },
+
+  dropdown:         { position: 'absolute', top: 60, left: 0, right: 0, backgroundColor: '#0f172a', borderWidth: 1, borderColor: colors.border, borderRadius: 14, zIndex: 30, elevation: 8, overflow: 'hidden' },
+  dropdownItem:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
+  dropdownItemBorder:{ borderBottomWidth: 1, borderBottomColor: colors.border },
+  dropdownCompany:  { fontSize: 14, fontWeight: '600', color: colors.text },
+  dropdownPhone:    { fontSize: 11, color: colors.muted, marginTop: 1 },
+  statsHint:      { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -6, marginBottom: 10, paddingHorizontal: 4 },
+  statsHintTxt:   { fontSize: 11, color: colors.muted },
 
   startBtnWrap: { borderRadius: 18, overflow: 'hidden', marginTop: 4 },
   startBtn:     { paddingVertical: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },

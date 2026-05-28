@@ -163,6 +163,41 @@ export function isOutsideBusinessHours(transcript: string): boolean {
   return patterns.some(p => p.test(transcript));
 }
 
+export function isCallbackOffer(transcript: string): boolean {
+  const t = transcript.toLowerCase();
+  const hasCallbackWord = /callback|call.{0,5}back|call you back|return.{0,10}call/.test(t);
+  const hasActionCue    = /press|say|option|\byes\b|\bno\b|would you like|prefer|instead/.test(t);
+  return hasCallbackWord && hasActionCue;
+}
+
+export function isVoicemailGreeting(transcript: string): boolean {
+  const t = transcript.toLowerCase();
+  return (
+    // "leave a message" / "leave a voicemail" anywhere
+    /leave.{0,20}(message|voicemail)/.test(t) ||
+    // "at/after the tone/beep"
+    /(at|after) the (tone|beep)/.test(t) ||
+    // "please record your message"
+    /please record.{0,30}message/.test(t) ||
+    // "you've reached [X]'s voicemail" or "you have reached the voicemail"
+    /(you'?ve|you have) reached.{0,40}(voicemail|voice mail)/.test(t) ||
+    // "voicemail box" / "mailbox is full"
+    /(voicemail|voice mail) (box|full|not available)/.test(t) ||
+    // "unable to take your call" with no DTMF options nearby
+    /unable to (take|answer).{0,20}call/.test(t) && !/press [0-9]/.test(t)
+  );
+}
+
+export function isInvalidOrDisconnected(transcript: string): boolean {
+  const t = transcript.toLowerCase();
+  return (
+    /not in service|been disconnected|no longer in service|is not a working number/.test(t) ||
+    /number you (have |'ve )?dialed|number you are trying/.test(t) ||
+    /check the number|try your call again|invalid number/.test(t) ||
+    /this number has been (changed|disconnected|removed)/.test(t)
+  );
+}
+
 export function extractMenuKeys(transcript: string): string[] {
   const matches = [...transcript.matchAll(/press\s+([0-9*#])/gi)];
   return [...new Set(matches.map(m => m[1]))];

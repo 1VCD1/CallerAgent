@@ -132,6 +132,31 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
       return reply.status(409).send({ error: 'You already have an active call in progress.', callId: activeCall.id });
     }
 
+    // Guard: per-user daily call limit
+    const DAILY_CALL_LIMIT = 10;
+    const usageRow = await queryOne<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM calls WHERE user_id = $1 AND started_at > NOW() - INTERVAL '24 hours'`,
+      [userId]
+    );
+    const dailyUsed = parseInt(usageRow?.count ?? '0', 10);
+    if (dailyUsed >= DAILY_CALL_LIMIT) {
+      return reply.status(429).send({
+        error: `You've reached the daily limit of ${DAILY_CALL_LIMIT} calls. Try again in a few hours.`,
+        code: 'DAILY_LIMIT_REACHED',
+        limit: DAILY_CALL_LIMIT,
+        used: dailyUsed,
+      });
+    }
+
+    // Detect IVR language from country code — most reliable signal for what language the phone system uses
+    function detectIvrLanguage(phone: string): 'en' | 'zh-TW' | 'zh-CN' {
+      const d = phone.replace(/\D/g, '');
+      if (d.startsWith('886')) return 'zh-TW';  // Taiwan
+      if (d.startsWith('852') || d.startsWith('853')) return 'zh-TW';  // Hong Kong / Macau
+      if (d.startsWith('86'))  return 'zh-CN';  // China (after 886 check)
+      return 'en';
+    }
+
     // Resolve user profile for callback number, language, and AI context
     const user = await queryOne<{ phone_number: string; name: string; birthday: string; language: string }>(
       `SELECT phone_number, name, birthday, language FROM users WHERE id = $1`,
@@ -139,12 +164,20 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
     );
     const userPhoneNumber = body.userPhoneNumber ?? user?.phone_number ?? undefined;
 
+    // Reject early if no callback phone — the bridge will fail silently without one
+    if (!userPhoneNumber) {
+      return reply.status(400).send({
+        error: 'No callback phone number set. Add one in your profile before starting a call.',
+        code: 'MISSING_CALLBACK_PHONE',
+      });
+    }
+
     const orchestrator = await CallOrchestrator.create({
       company: body.company,
       phoneNumber: body.phoneNumber,
       userPhoneNumber,
-      userInfo: { name: user?.name ?? undefined, birthday: user?.birthday ?? undefined },
-      language: body.ivrLanguage ?? user?.language ?? 'en',
+      userInfo: { name: user?.name ?? undefined, birthday: user?.birthday ?? undefined, phoneNumber: userPhoneNumber },
+      language: body.ivrLanguage ?? detectIvrLanguage(body.phoneNumber),
       goal: body.goal,
       userId,
       onUserNotify: async (callId) => {
@@ -308,6 +341,110 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
     );
     return patterns;
   });
+
+  // GET /company-suggestions — autocomplete from all calls, user's own history ranked first
+  fastify.get<{ Querystring: { q?: string; userId?: string } }>(
+    '/company-suggestions',
+    async (request, reply) => {
+      const userId = (request as any).userId ?? request.query.userId;
+      const q = (request.query.q ?? '').trim();
+      if (q.length < 2) return reply.send([]);
+      const rows = await query<{ company: string; phone_number: string }>(
+        `SELECT company, phone_number FROM (
+           SELECT DISTINCT ON (LOWER(company)) company, phone_number,
+             CASE WHEN user_id = $1 THEN 0 ELSE 1 END AS priority,
+             started_at
+           FROM calls
+           WHERE LOWER(company) LIKE '%' || LOWER($2) || '%'
+              OR LOWER($2) LIKE '%' || LOWER(company) || '%'
+           ORDER BY LOWER(company), CASE WHEN user_id = $1 THEN 0 ELSE 1 END ASC, started_at DESC
+         ) sub
+         ORDER BY priority ASC, started_at DESC
+         LIMIT 5`,
+        [userId ?? null, q]
+      );
+      return rows.map(r => ({ company: r.company, phone: r.phone_number }));
+    }
+  );
+
+  // GET /company-stats/:company — user's historical call stats for a specific company
+  fastify.get<{ Params: { company: string }; Querystring: { userId?: string } }>(
+    '/company-stats/:company',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const userId = (request as any).userId ?? request.query.userId;
+      if (!userId) return reply.send(null);
+      const { company } = request.params;
+      const row = await queryOne<{ total: string; successful: string; avg_wait_secs: string | null }>(
+        `SELECT
+           COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED')) AS total,
+           COUNT(*) FILTER (WHERE human_reached = true) AS successful,
+           ROUND(AVG(wait_duration_seconds) FILTER (WHERE human_reached = true)::numeric)::integer AS avg_wait_secs
+         FROM calls
+         WHERE user_id = $1 AND (
+           LOWER(company) = LOWER($2)
+           OR LOWER(company) LIKE '%' || LOWER($2) || '%'
+           OR LOWER($2) LIKE '%' || LOWER(company) || '%'
+         )`,
+        [userId, company]
+      );
+      const total = parseInt(row?.total ?? '0', 10);
+      if (total === 0) return reply.send(null);
+      const successful = parseInt(row?.successful ?? '0', 10);
+      return {
+        total,
+        successful,
+        successPct: Math.round(successful / total * 100),
+        avgWaitSecs: row?.avg_wait_secs ? parseInt(row.avg_wait_secs, 10) : null,
+      };
+    }
+  );
+
+  // GET /company-notes/:company — fetch user's tip for a company
+  fastify.get<{ Params: { company: string }; Querystring: { userId?: string } }>(
+    '/company-notes/:company',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const userId = (request as any).userId ?? request.query.userId;
+      if (!userId) return reply.send(null);
+      const row = await queryOne<{ note: string }>(
+        `SELECT note FROM user_company_notes
+         WHERE user_id = $1 AND (
+           LOWER(company) = LOWER($2)
+           OR LOWER(company) LIKE '%' || LOWER($2) || '%'
+           OR LOWER($2) LIKE '%' || LOWER(company) || '%'
+         ) LIMIT 1`,
+        [userId, request.params.company]
+      );
+      return row ?? null;
+    }
+  );
+
+  // PUT /company-notes/:company — upsert (or delete if empty) user's tip for a company
+  fastify.put<{ Params: { company: string }; Body: { note: string } & { userId?: string } }>(
+    '/company-notes/:company',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const userId = (request as any).userId ?? (request.body as any).userId;
+      if (!userId) return reply.status(401).send({ error: 'Not authenticated' });
+      const { company } = request.params;
+      const { note } = request.body as { note: string };
+      if (!note?.trim()) {
+        await query(
+          `DELETE FROM user_company_notes WHERE user_id = $1 AND LOWER(company) = LOWER($2)`,
+          [userId, company]
+        );
+        return { deleted: true };
+      }
+      await query(
+        `INSERT INTO user_company_notes (user_id, company, note)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, company) DO UPDATE SET note = EXCLUDED.note, updated_at = NOW()`,
+        [userId, company, note.trim()]
+      );
+      return { saved: true };
+    }
+  );
 
   // GET /ivr-notes/:company — get IVR learning notes for a company
   fastify.get<{ Params: { company: string } }>('/ivr-notes/:company', async (request, reply) => {

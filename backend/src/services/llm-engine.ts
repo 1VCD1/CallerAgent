@@ -97,10 +97,11 @@ function buildContextMessage(ctx: CallContext): string {
     .map(formatMemory)
     .join('\n');
 
-  const userInfoBlock = ctx.userInfo && (ctx.userInfo.name || ctx.userInfo.birthday)
+  const userInfoBlock = ctx.userInfo && (ctx.userInfo.name || ctx.userInfo.birthday || ctx.userInfo.phoneNumber)
     ? `\n⚡ USER INFO — USE THIS PROACTIVELY to answer IVR questions. Do NOT wait to be asked twice.
 ${ctx.userInfo.name ? `  Name: ${ctx.userInfo.name}` : ''}
-${ctx.userInfo.birthday ? `  Date of birth: ${ctx.userInfo.birthday}` : ''}`.trim()
+${ctx.userInfo.birthday ? `  Date of birth: ${ctx.userInfo.birthday}` : ''}
+${ctx.userInfo.phoneNumber ? `  Callback phone: ${ctx.userInfo.phoneNumber} ← say this if IVR asks for a callback number` : ''}`.trim()
     : '';
 
   const confidenceHistory = ctx.recentHumanConfidences && ctx.recentHumanConfidences.length > 0
@@ -147,6 +148,10 @@ ${ctx.userInfo.birthday ? `  Date of birth: ${ctx.userInfo.birthday}` : ''}`.tri
     ? `\n📋 PRIOR CALL NOTES FOR ${ctx.company.toUpperCase()} (learn from these):\n${ctx.companyIvrNotes}`
     : '';
 
+  const userNoteBlock = ctx.userCompanyNote
+    ? `\n💬 USER TIP FOR ${ctx.company.toUpperCase()}:\n"${ctx.userCompanyNote}"\n← Follow this hint — the user learned it from a previous call.`
+    : '';
+
   const patternBlock = ctx.actionPatterns && ctx.actionPatterns.length > 0
     ? (() => {
         const bad  = ctx.actionPatterns!.filter(p => p.successPct < 40 && p.total >= 3);
@@ -156,6 +161,10 @@ ${ctx.userInfo.birthday ? `  Date of birth: ${ctx.userInfo.birthday}` : ''}`.tri
         if (bad.length > 0)  lines.push(`  ❌ Avoid: ${bad.map(p => `${p.action}(${p.value ?? ''}) only ${p.successPct}% of ${p.total}`).join(' | ')}`);
         return lines.length > 0 ? `\n📊 ACTION PATTERNS FOR ${ctx.company.toUpperCase()} (across all past calls):\n${lines.join('\n')}` : '';
       })()
+    : '';
+
+  const ringToneBlock = ctx.audioAnalysis?.postRingPickup
+    ? `\n🔔 TRANSFER RING DETECTED: Ring-back tones (嘟嘟嘟) were heard in the audio stream before this utterance, then someone picked up. An IVR never rings before speaking — this is a LIVE HUMAN AGENT answering the phone. Set is_human=true with confidence >= 0.95 and action=escalate_to_user.`
     : '';
 
   const audioBlock = ctx.audioAnalysis && ctx.audioAnalysis.framesAnalyzed >= 10
@@ -185,8 +194,10 @@ ${waitWarning}
 ${sameKeyWarning}
 ${lowConfWarning}
 ${explorationBlock}
+${userNoteBlock}
 ${ivrNotesBlock}
 ${patternBlock}
+${ringToneBlock}
 ${audioBlock}
 ${utteranceBlock}
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
@@ -62,6 +62,30 @@ function useProtectedRoute(user: User | null | undefined) {
 export default function RootLayout() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const { setUserId } = useCallStore();
+  const router = useRouter();
+  const notifResponseRef = useRef<any>(null);
+
+  // Navigate to call detail when user taps a push notification
+  useEffect(() => {
+    const handleResponse = (response: Notifications.NotificationResponse) => {
+      const data = response.notification.request.content.data as any;
+      if (data?.callId && data?.action === 'JOIN_CALL') {
+        router.push(`/call/${data.callId}` as any);
+      }
+    };
+
+    // Tapped while app was running / backgrounded
+    notifResponseRef.current = Notifications.addNotificationResponseReceivedListener(handleResponse);
+
+    // Tapped while app was fully closed
+    Notifications.getLastNotificationResponseAsync().then(response => {
+      if (response) handleResponse(response);
+    });
+
+    return () => {
+      notifResponseRef.current?.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (DEV_SKIP_AUTH) {

@@ -30,6 +30,7 @@ export interface LLMAction {
 export interface UserInfo {
   name?: string;
   birthday?: string;
+  phoneNumber?: string; // user's real callback number — spoken aloud when IVR asks
 }
 
 export interface CallContext {
@@ -48,6 +49,7 @@ export interface CallContext {
   speakerChanged?: boolean;           // Deepgram diarization detected a new voice
   availableMenuKeys?: string[];       // DTMF keys explicitly mentioned in current menu
   companyIvrNotes?: string;           // post-call LLM summaries from prior calls to this company
+  userCompanyNote?: string;           // user-written tip for this company ("try pressing 0 first")
   currentIvrUtterance?: string;       // what the IVR said just now (this turn only)
   consecutiveWaits?: number;
   consecutiveSameKey?: { key: string; count: number };
@@ -60,6 +62,7 @@ export interface CallContext {
     pitchVariance: number;
     hasDisfluencies: boolean;
     framesAnalyzed: number;
+    postRingPickup: boolean;
   } | null;
 }
 

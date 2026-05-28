@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { colors, STATUS } from '@/theme';
-import { getCall, getApiUrl } from '@/api';
+import { getCall, getApiUrl, getCompanyNote, saveCompanyNote } from '@/api';
+import { getOutcomeConfig } from '@/outcome';
 import type { Call, Transcript } from '@/api';
 
 function formatTime(d: string) {
@@ -33,13 +34,31 @@ export default function CallDetailScreen() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
+  const [note, setNote] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
 
   useEffect(() => {
-    getCall(id).then(setCall).catch(console.warn).finally(() => setLoading(false));
+    getCall(id).then(c => {
+      setCall(c);
+      if (c.ended_at) {
+        getCompanyNote(c.company).then(n => setNote(n ?? '')).catch(() => {});
+      }
+    }).catch(console.warn).finally(() => setLoading(false));
     Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
     return () => { soundRef.current?.unloadAsync(); };
   }, [id]);
+
+  const saveNote = async () => {
+    if (!call) return;
+    setNoteSaving(true);
+    try {
+      await saveCompanyNote(call.company, note);
+      setNoteSaved(true);
+      setTimeout(() => setNoteSaved(false), 2000);
+    } catch {} finally { setNoteSaving(false); }
+  };
 
   async function togglePlayback() {
     if (!call?.recording_url) return;
@@ -92,7 +111,9 @@ export default function CallDetailScreen() {
   }
 
   const cfg        = STATUS[call.status] ?? STATUS['ENDED'];
+  const outcome    = getOutcomeConfig(call);
   const transcripts: Transcript[] = call.transcripts ?? [];
+  const isTerminal = !!call.ended_at;
 
   return (
     <SafeAreaView style={s.safe}>
@@ -102,20 +123,16 @@ export default function CallDetailScreen() {
           <Ionicons name="chevron-back" size={22} color={colors.text} />
           <Text style={s.backTxt}>Sessions</Text>
         </TouchableOpacity>
-        {call.human_reached ? (
-          <View style={s.outcomePillGreen}>
-            <Ionicons name="checkmark-circle" size={11} color={colors.green} />
-            <Text style={s.outcomePillGreenTxt}>Human reached</Text>
+        {isTerminal && (
+          <View style={[s.outcomePill, { backgroundColor: outcome.bg, borderColor: outcome.border }]}>
+            {call.human_reached
+              ? <Ionicons name="checkmark-circle" size={11} color={outcome.color} />
+              : outcome.icon
+              ? <Ionicons name={outcome.icon as any} size={11} color={outcome.color} />
+              : null}
+            <Text style={[s.outcomePillTxt, { color: outcome.color }]}>{outcome.label}</Text>
           </View>
-        ) : call.status === 'FAILED' ? (
-          <View style={s.outcomePillRed}>
-            <Text style={s.outcomePillRedTxt}>Failed</Text>
-          </View>
-        ) : call.ended_at ? (
-          <View style={s.outcomePillNeutral}>
-            <Text style={s.outcomePillNeutralTxt}>No human</Text>
-          </View>
-        ) : null}
+        )}
       </View>
 
       <ScrollView contentContainerStyle={s.scroll}>
@@ -129,13 +146,15 @@ export default function CallDetailScreen() {
           <View style={[s.badge, { backgroundColor: cfg.bg }]}>
             <Text style={[s.badgeTxt, { color: cfg.color }]}>{cfg.label}</Text>
           </View>
-          {call.human_reached && (
-            <View style={s.humanPill}>
-              <Ionicons name="checkmark-circle" size={12} color={colors.green} />
-              <Text style={s.humanPillTxt}>Human reached</Text>
-            </View>
-          )}
         </View>
+
+        {/* Action hint banner — shown when there's something the user should do */}
+        {isTerminal && outcome.actionHint && (
+          <View style={[s.actionBanner, { borderColor: outcome.border, backgroundColor: outcome.bg }]}>
+            <Ionicons name={outcome.icon as any ?? 'information-circle-outline'} size={18} color={outcome.color} style={{ flexShrink: 0 }} />
+            <Text style={[s.actionBannerTxt, { color: outcome.color }]}>{outcome.actionHint}</Text>
+          </View>
+        )}
 
         {/* Stats grid */}
         <View style={s.statsGrid}>
@@ -199,6 +218,35 @@ export default function CallDetailScreen() {
           )}
         </View>
 
+        {/* Tip for next call — only shown on completed calls */}
+        {isTerminal && (
+          <View style={s.noteCard}>
+            <Text style={s.noteTitle}>TIP FOR NEXT CALL</Text>
+            <Text style={s.noteHint}>Saved hints are passed directly to the AI on future calls to {call.company}.</Text>
+            <TextInput
+              style={s.noteInput}
+              placeholder={`e.g. "Press 0 twice to skip the menu"`}
+              placeholderTextColor={colors.muted}
+              value={note}
+              onChangeText={setNote}
+              maxLength={200}
+              multiline
+            />
+            <TouchableOpacity
+              style={[s.noteSaveBtn, noteSaved && s.noteSaveBtnDone]}
+              onPress={saveNote}
+              disabled={noteSaving}
+            >
+              {noteSaving
+                ? <ActivityIndicator size="small" color={colors.green} />
+                : <Text style={[s.noteSaveBtnTxt, noteSaved && { color: colors.green }]}>
+                    {noteSaved ? 'Saved ✓' : 'Save tip'}
+                  </Text>
+              }
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Recording — bottom */}
         {call.recording_url && (
           <TouchableOpacity style={s.recordingBar} onPress={togglePlayback} disabled={audioLoading}>
@@ -233,12 +281,10 @@ const s = StyleSheet.create({
   backBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
   backTxt:  { fontSize: 16, color: colors.text },
 
-  outcomePillGreen:    { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(37,211,102,0.12)', borderWidth: 1, borderColor: 'rgba(37,211,102,0.25)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 },
-  outcomePillGreenTxt: { fontSize: 12, color: colors.green, fontWeight: '600' },
-  outcomePillRed:      { backgroundColor: 'rgba(239,68,68,0.10)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 },
-  outcomePillRedTxt:   { fontSize: 12, color: colors.red, fontWeight: '600' },
-  outcomePillNeutral:    { backgroundColor: 'rgba(100,116,139,0.10)', borderWidth: 1, borderColor: 'rgba(100,116,139,0.25)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 },
-  outcomePillNeutralTxt: { fontSize: 12, color: colors.muted, fontWeight: '600' },
+  outcomePill:    { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 },
+  outcomePillTxt: { fontSize: 12, fontWeight: '600' },
+  actionBanner:   { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 16 },
+  actionBannerTxt:{ fontSize: 13, flex: 1, lineHeight: 19, fontWeight: '500' },
   scroll:   { padding: 20, paddingBottom: 56 },
 
   company:  { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: 4 },
@@ -248,13 +294,19 @@ const s = StyleSheet.create({
   badges:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
   badge:    { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   badgeTxt: { fontSize: 12, fontWeight: '600' },
-  humanPill:    { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(37,211,102,0.12)', borderWidth: 1, borderColor: 'rgba(37,211,102,0.25)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 99 },
-  humanPillTxt: { fontSize: 12, color: colors.green, fontWeight: '600' },
 
   statsGrid:  { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   statCell:   { flex: 1, minWidth: '45%', backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12 },
   statLabel:  { fontSize: 10, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   statValue:  { fontSize: 15, fontWeight: '700', color: colors.text },
+
+  noteCard:        { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 16 },
+  noteTitle:       { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1, marginBottom: 6 },
+  noteHint:        { fontSize: 12, color: colors.muted, lineHeight: 17, marginBottom: 12 },
+  noteInput:       { backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 12, color: colors.text, fontSize: 14, lineHeight: 20, minHeight: 60 },
+  noteSaveBtn:     { marginTop: 10, alignItems: 'center', paddingVertical: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 10 },
+  noteSaveBtnDone: { borderColor: colors.green },
+  noteSaveBtnTxt:  { fontSize: 13, fontWeight: '600', color: colors.subtext },
 
   recordingBar:     { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: 24 },
   recordingTitle:   { fontSize: 14, fontWeight: '600', color: colors.text },

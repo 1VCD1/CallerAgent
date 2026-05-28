@@ -141,6 +141,7 @@ export async function startCall(
     const err = (() => { try { return JSON.parse(body); } catch { return {}; } })() as any;
     const e = new Error(err?.error ?? err?.message ?? `Server error ${res.status}: ${body.slice(0, 120)}`) as any;
     e.status = res.status;
+    e.code   = err?.code;
     e.callId = err?.callId;
     throw e;
   }
@@ -167,6 +168,59 @@ export async function getCall(callId: string): Promise<Call> {
 export async function endCall(callId: string): Promise<void> {
   const url = await getApiUrl();
   await fetch(`${url}/calls/${callId}`, { method: 'DELETE', headers: await getHeaders() });
+}
+
+export interface CompanyStats {
+  total: number;
+  successful: number;
+  successPct: number;
+  avgWaitSecs: number | null;
+}
+
+export async function getCompanySuggestions(q: string): Promise<Array<{ company: string; phone: string }>> {
+  if (q.trim().length < 2) return [];
+  const url = await getApiUrl();
+  const token = await getIdToken();
+  const devUserId = !token ? await getStoredUserId() : null;
+  // Pass userId so backend can rank user's own calls first; global results still fill the rest
+  const params = new URLSearchParams({ q: q.trim(), ...(devUserId ? { userId: devUserId } : {}) });
+  const res = await fetch(`${url}/company-suggestions?${params}`, { headers: await getHeaders() });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function getCompanyStats(company: string): Promise<CompanyStats | null> {
+  if (!company.trim()) return null;
+  const url = await getApiUrl();
+  const token = await getIdToken();
+  const devUserId = !token ? await getStoredUserId() : null;
+  const qs = devUserId ? `?userId=${devUserId}` : '';
+  const res = await fetch(`${url}/company-stats/${encodeURIComponent(company)}${qs}`, { headers: await getHeaders() });
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data ?? null;
+}
+
+export async function getCompanyNote(company: string): Promise<string | null> {
+  const url = await getApiUrl();
+  const token = await getIdToken();
+  const devUserId = !token ? await getStoredUserId() : null;
+  const qs = devUserId ? `?userId=${devUserId}` : '';
+  const res = await fetch(`${url}/company-notes/${encodeURIComponent(company)}${qs}`, { headers: await getHeaders() });
+  if (!res.ok) return null;
+  const data = await res.json() as { note: string } | null;
+  return data?.note ?? null;
+}
+
+export async function saveCompanyNote(company: string, note: string): Promise<void> {
+  const url = await getApiUrl();
+  const token = await getIdToken();
+  const devUserId = !token ? await getStoredUserId() : null;
+  await fetch(`${url}/company-notes/${encodeURIComponent(company)}`, {
+    method: 'PUT',
+    headers: await getHeaders(),
+    body: JSON.stringify({ note, ...(devUserId ? { userId: devUserId } : {}) }),
+  });
 }
 
 export interface IvrNote {
