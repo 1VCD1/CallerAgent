@@ -549,7 +549,7 @@ export default function CallScreen() {
                 <TouchableOpacity
                   key={i}
                   style={s.recentPill}
-                  onPress={() => { setCompany(t.company); setPhone(t.phone); setGoal(t.goal); }}
+                  onPress={() => { justSelectedRef.current = true; setCompany(t.company); setPhone(t.phone); setGoal(t.goal); }}
                 >
                   <Text style={s.recentPillCompany} numberOfLines={1}>{t.company}</Text>
                   {t.goal ? <Text style={s.recentPillGoal} numberOfLines={1}>{t.goal}</Text> : null}
