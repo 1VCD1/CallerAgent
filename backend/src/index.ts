@@ -216,6 +216,10 @@ async function bootstrap() {
 
   fastify.get('/health', async () => ({ status: 'ok', timestamp: new Date().toISOString() }));
 
+  fastify.get('/googlef5d64b292d1527bf.html', async (_req, reply) => {
+    reply.type('text/html').send('google-site-verification: googlef5d64b292d1527bf');
+  });
+
   fastify.get('/dashboard', async (_request, reply) => reply.redirect('/dashboard.html'));
 
   fastify.get('/privacy', async (_request, reply) => {
