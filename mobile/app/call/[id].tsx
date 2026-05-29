@@ -187,20 +187,20 @@ export default function CallDetailScreen() {
               </View>
             ) : (
               <View style={{ paddingTop: 8, gap: 8 }}>
-                {transcripts.map((t, i) => {
-                  const pct        = t.human_confidence ? Math.round(t.human_confidence * 100) : null;
-                  const isAI       = t.speaker === 'AI';
-                  const isHumanSpk = t.speaker === 'HUMAN';
+                {transcripts.map((tr, i) => {
+                  const pct        = tr.human_confidence ? Math.round(tr.human_confidence * 100) : null;
+                  const isAI       = tr.speaker === 'AI';
+                  const isHumanSpk = tr.speaker === 'HUMAN';
                   return (
-                    <View key={t.id ?? i} style={[s.chatRow, isAI ? s.chatRowRight : s.chatRowLeft]}>
+                    <View key={tr.id ?? i} style={[s.chatRow, isAI ? s.chatRowRight : s.chatRowLeft]}>
                       <View style={[s.chatBubble, isAI ? s.chatBubbleAI : isHumanSpk ? s.chatBubbleHuman : s.chatBubbleIVR]}>
                         <View style={s.chatMeta}>
                           <Text style={[s.chatSpeaker, { color: isAI ? colors.blue : isHumanSpk ? colors.green : colors.muted }]}>
-                            {t.speaker}
+                            {tr.speaker}
                           </Text>
-                          <Text style={s.chatTime}>{formatTime(t.timestamp)}</Text>
+                          <Text style={s.chatTime}>{formatTime(tr.timestamp)}</Text>
                         </View>
-                        <Text style={[s.chatText, isAI && { color: '#93c5fd' }]}>{t.text}</Text>
+                        <Text style={[s.chatText, isAI && { color: '#93c5fd' }]}>{tr.text}</Text>
                         {pct != null && (
                           <View style={s.confRow}>
                             <View style={[s.confDot, {
