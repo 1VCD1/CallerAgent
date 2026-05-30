@@ -34,7 +34,7 @@ function buildStreamingGatherTwiML(gatherUrl: string, streamUrl: string): string
   <Start>
     <Stream url="${streamUrl}" track="both_tracks"/>
   </Start>
-  <Gather input="speech dtmf" timeout="8" speechTimeout="2" action="${gatherUrl}" method="POST">
+  <Gather input="speech dtmf" timeout="8" speechTimeout="auto" action="${gatherUrl}" method="POST">
     <Pause length="3"/>
   </Gather>
   <Redirect method="POST">${gatherUrl}</Redirect>
