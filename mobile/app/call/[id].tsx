@@ -36,11 +36,23 @@ export default function CallDetailScreen() {
   const [loading, setLoading]     = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
+  const [position, setPosition] = useState(0);   // ms
+  const [duration, setDuration] = useState(0);   // ms
   const [showTranscript, setShowTranscript] = useState(false);
   const [note, setNote] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
+
+  const onPlaybackStatus = (status: any) => {
+    if (!status.isLoaded) return;
+    if (status.durationMillis) setDuration(status.durationMillis);
+    setPosition(status.positionMillis ?? 0);
+    if (!status.isPlaying && status.didJustFinish) {
+      setIsPlaying(false);
+      setPosition(0);
+    }
+  };
 
   useEffect(() => {
     getCall(id).then(c => {
@@ -78,8 +90,8 @@ export default function CallDetailScreen() {
         const apiUrl = await getApiUrl();
         const { sound } = await Audio.Sound.createAsync(
           { uri: `${apiUrl}/api/calls/${id}/recording` },
-          { shouldPlay: true },
-          status => { if (status.isLoaded && !status.isPlaying && status.didJustFinish) setIsPlaying(false); }
+          { shouldPlay: true, progressUpdateIntervalMillis: 500 },
+          onPlaybackStatus
         );
         soundRef.current = sound;
       }
@@ -252,21 +264,41 @@ export default function CallDetailScreen() {
 
         {/* Recording — bottom */}
         {call.recording_url && (
-          <TouchableOpacity style={s.recordingBar} onPress={togglePlayback} disabled={audioLoading}>
+          <TouchableOpacity style={s.recordingBar} onPress={togglePlayback} disabled={audioLoading} activeOpacity={0.8}>
             {audioLoading
               ? <ActivityIndicator size="small" color={colors.blue} />
               : <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={34} color={colors.blue} />
             }
             <View style={{ flex: 1 }}>
-              <Text style={s.recordingTitle}>{t('recording_title')}</Text>
-              <Text style={s.recordingSubtitle}>{isPlaying ? t('recording_playing') : t('recording_tap')}</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={s.recordingTitle}>{t('recording_title')}</Text>
+                {duration > 0 && (
+                  <Text style={s.recordingTime}>
+                    {fmtMs(position)} / {fmtMs(duration)}
+                  </Text>
+                )}
+              </View>
+              <Text style={s.recordingSubtitle}>
+                {isPlaying ? t('recording_playing') : t('recording_tap')}
+              </Text>
+              {duration > 0 && (
+                <View style={s.recordingProgressTrack}>
+                  <View style={[s.recordingProgressFill, {
+                    width: `${Math.min((position / duration) * 100, 100)}%` as any,
+                  }]} />
+                </View>
+              )}
             </View>
-            <Ionicons name="musical-notes-outline" size={16} color={colors.muted} />
           </TouchableOpacity>
         )}
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+function fmtMs(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 function StatCell({ label, value }: { label: string; value: string }) {
@@ -311,9 +343,12 @@ const s = StyleSheet.create({
   noteSaveBtnDone: { borderColor: colors.green },
   noteSaveBtnTxt:  { fontSize: 13, fontWeight: '600', color: colors.subtext },
 
-  recordingBar:     { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: 24 },
-  recordingTitle:   { fontSize: 14, fontWeight: '600', color: colors.text },
-  recordingSubtitle:{ fontSize: 12, color: colors.muted, marginTop: 2 },
+  recordingBar:          { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: 24 },
+  recordingTitle:        { fontSize: 14, fontWeight: '600', color: colors.text },
+  recordingSubtitle:     { fontSize: 12, color: colors.muted, marginTop: 2 },
+  recordingTime:         { fontSize: 11, color: colors.muted },
+  recordingProgressTrack:{ height: 3, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden', marginTop: 8 },
+  recordingProgressFill: { height: 3, backgroundColor: colors.blue, borderRadius: 2 },
 
   transcriptCard: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 16 },
   sectionRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 2 },
