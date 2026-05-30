@@ -491,7 +491,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
   });
 };
 
-function buildActionTwiML(action: string, value: string | undefined, gatherUrl: string, voice = 'alice'): string {
+function buildActionTwiML(action: string, value: string | undefined, gatherUrl: string, voice = 'Polly.Danielle-Generative'): string {
   let innerXml = '';
 
   switch (action) {

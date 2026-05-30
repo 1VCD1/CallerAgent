@@ -231,16 +231,16 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
             {transcripts.length === 0 ? (
               <Text style={s.transcriptEmpty}>{t('waiting_ivr')}</Text>
             ) : (
-              transcripts.map((t, i) => {
-                const isAI       = t.speaker === 'AI';
-                const isHumanSpk = t.speaker === 'HUMAN';
+              transcripts.map((tr, i) => {
+                const isAI       = tr.speaker === 'AI';
+                const isHumanSpk = tr.speaker === 'HUMAN';
                 return (
-                  <View key={t.id ?? i} style={[s.chatRow, isAI ? s.chatRowRight : s.chatRowLeft]}>
+                  <View key={tr.id ?? i} style={[s.chatRow, isAI ? s.chatRowRight : s.chatRowLeft]}>
                     <View style={[s.chatBubble, isAI ? s.chatBubbleAI : isHumanSpk ? s.chatBubbleHuman : s.chatBubbleIVR]}>
                       <Text style={[s.chatSpeaker, { color: isAI ? colors.blue : isHumanSpk ? colors.green : colors.muted }]}>
-                        {t.speaker}
+                        {tr.speaker}
                       </Text>
-                      <Text style={[s.chatText, isAI && { color: '#93c5fd' }]}>{t.text}</Text>
+                      <Text style={[s.chatText, isAI && { color: '#93c5fd' }]}>{tr.text}</Text>
                     </View>
                   </View>
                 );
@@ -545,14 +545,14 @@ export default function CallScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ paddingHorizontal: 22 }}
             >
-              {templates.map((t, i) => (
+              {templates.map((tmpl, i) => (
                 <TouchableOpacity
                   key={i}
                   style={s.recentPill}
-                  onPress={() => { justSelectedRef.current = true; setCompany(t.company); setPhone(t.phone); setGoal(t.goal); }}
+                  onPress={() => { justSelectedRef.current = true; setCompany(tmpl.company); setPhone(tmpl.phone); setGoal(tmpl.goal); }}
                 >
-                  <Text style={s.recentPillCompany} numberOfLines={1}>{t.company}</Text>
-                  {t.goal ? <Text style={s.recentPillGoal} numberOfLines={1}>{t.goal}</Text> : null}
+                  <Text style={s.recentPillCompany} numberOfLines={1}>{tmpl.company}</Text>
+                  {tmpl.goal ? <Text style={s.recentPillGoal} numberOfLines={1}>{tmpl.goal}</Text> : null}
                 </TouchableOpacity>
               ))}
             </ScrollView>

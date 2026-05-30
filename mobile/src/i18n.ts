@@ -29,4 +29,18 @@ i18n
     compatibilityJSON: 'v4',
   });
 
+const GOAL_KEY_MAP: Record<string, string> = {
+  'Make appointment':    'goal_appointment',
+  'Billing issue':       'goal_billing',
+  'Cancel subscription': 'goal_cancel',
+  'Refund request':      'goal_refund',
+  'Technical support':   'goal_support',
+};
+
+export function translateGoal(goal: string | undefined | null, t: (key: string) => string): string {
+  if (!goal) return '';
+  const key = GOAL_KEY_MAP[goal];
+  return key ? t(key) : goal;
+}
+
 export default i18n;

@@ -8,6 +8,7 @@ import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
 import { getCalls, endCall } from '@/api';
 import { useCallStore } from '@/store';
 import { getOutcomeConfig, NON_FAILURE_REASONS } from '@/outcome';
+import { translateGoal } from '@/i18n';
 
 function useTimeAgo() {
   const { t } = useTranslation();
@@ -164,7 +165,7 @@ export default function HistoryScreen() {
 
               {/* Row 1b: goal */}
               {item.goal ? (
-                <Text style={s.goal} numberOfLines={1}>{item.goal}</Text>
+                <Text style={s.goal} numberOfLines={1}>{translateGoal(item.goal, t)}</Text>
               ) : null}
 
               {/* Row 2: time */}

@@ -260,7 +260,7 @@ export const LANGUAGES: Record<Lang, LangConfig> = {
   'en': {
     label: 'English',
     deepgramLanguage: 'en-US',
-    ttsVoice: 'Google.en-US-Neural2-F',
+    ttsVoice: 'Polly.Danielle-Generative',
     systemPrompt: EN_SYSTEM_PROMPT,
     humanBridgeMessage: 'A live representative has been detected. Please hold while we connect you.',
     userBridgeMessage: "You're being connected to a live representative.",
@@ -276,7 +276,7 @@ export const LANGUAGES: Record<Lang, LangConfig> = {
   'zh-CN': {
     label: '简体中文',
     deepgramLanguage: 'zh-CN',
-    ttsVoice: 'Google.cmn-CN-Neural2-A',
+    ttsVoice: 'Polly.Zhiyu-Neural',
     systemPrompt: ZH_CN_SYSTEM_PROMPT,
     humanBridgeMessage: '已检测到真人客服，请稍候，正在为您接通。',
     userBridgeMessage: '已接通真人客服，正在为您转接。',

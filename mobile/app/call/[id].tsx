@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useTranslation } from 'react-i18next';
 import { colors, STATUS } from '@/theme';
+import { translateGoal } from '@/i18n';
 import { getCall, getApiUrl, getCompanyNote, saveCompanyNote } from '@/api';
 import { getOutcomeConfig } from '@/outcome';
 import type { Call, Transcript } from '@/api';
@@ -141,7 +142,7 @@ export default function CallDetailScreen() {
 
         {/* Header */}
         <Text style={s.company}>{call.company}</Text>
-        {call.goal ? <Text style={s.goal}>{call.goal}</Text> : null}
+        {call.goal ? <Text style={s.goal}>{translateGoal(call.goal, t)}</Text> : null}
         <Text style={s.phone}>{call.phone_number}</Text>
 
         <View style={s.badges}>

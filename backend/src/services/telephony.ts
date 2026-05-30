@@ -60,7 +60,7 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
-export async function sayPhrase(callSid: string, phrase: string, voice = 'alice'): Promise<void> {
+export async function sayPhrase(callSid: string, phrase: string, voice = 'Polly.Danielle-Generative'): Promise<void> {
   await client.calls(callSid).update({
     twiml: `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -88,7 +88,7 @@ export async function createConferenceWithHold(
   callSid: string,
   conferenceName: string,
   message?: string,
-  voice = 'alice'
+  voice = 'Polly.Danielle-Generative'
 ): Promise<void> {
   const sayXml = message ? `<Say voice="${voice}">${escapeXml(message)}</Say>` : '';
   await client.calls(callSid).update({
@@ -106,7 +106,7 @@ export async function bridgeUserToConference(
   userPhoneNumber: string,
   conferenceName: string,
   message = "You're being connected to a live representative.",
-  voice = 'alice'
+  voice = 'Polly.Danielle-Generative'
 ): Promise<string> {
   const call = await client.calls.create({
     to: userPhoneNumber,
