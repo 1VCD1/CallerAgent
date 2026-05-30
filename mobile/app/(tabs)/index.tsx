@@ -135,10 +135,11 @@ interface ActiveCallViewProps {
 function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: ActiveCallViewProps) {
   const { t } = useTranslation();
   const [showTranscript, setShowTranscript] = useState(false);
-  const orbState     = getOrbState(call.status);
-  const prevLen      = useRef(0);
+  const orbState      = getOrbState(call.status);
+  const prevLen       = useRef(0);
   const transcriptRef = useRef<ScrollView>(null);
   const [speakingTick, setSpeakingTick] = useState(0);
+  const atBottom      = useRef(true); // tracks whether user is scrolled to bottom
 
   useEffect(() => {
     if (transcripts.length > prevLen.current) {
@@ -146,6 +147,14 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
       setSpeakingTick(t => t + 1);
     }
   }, [transcripts.length]);
+
+  // When transcript panel opens, jump to bottom immediately
+  useEffect(() => {
+    if (showTranscript) {
+      atBottom.current = true;
+      setTimeout(() => transcriptRef.current?.scrollToEnd({ animated: false }), 50);
+    }
+  }, [showTranscript]);
 
   const STEPS = STEP_KEYS.map(s => ({ ...s, label: t(s.tKey) }));
   const stepIdx = STEPS.findIndex(st => st.key === orbState);
@@ -226,7 +235,14 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
             ref={transcriptRef}
             style={s.transcriptList}
             contentContainerStyle={{ padding: 12, paddingTop: 8 }}
-            onContentSizeChange={() => transcriptRef.current?.scrollToEnd({ animated: true })}
+            onContentSizeChange={() => {
+              if (atBottom.current) transcriptRef.current?.scrollToEnd({ animated: true });
+            }}
+            onScroll={(e) => {
+              const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+              atBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - 40;
+            }}
+            scrollEventThrottle={100}
           >
             {transcripts.length === 0 ? (
               <Text style={s.transcriptEmpty}>{t('waiting_ivr')}</Text>
