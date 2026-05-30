@@ -260,7 +260,7 @@ export const LANGUAGES: Record<Lang, LangConfig> = {
   'en': {
     label: 'English',
     deepgramLanguage: 'en-US',
-    ttsVoice: 'Polly.Danielle-Generative',
+    ttsVoice: 'Google.en-US-Chirp3-HD-Fenrir',
     systemPrompt: EN_SYSTEM_PROMPT,
     humanBridgeMessage: 'A live representative has been detected. Please hold while we connect you.',
     userBridgeMessage: "You're being connected to a live representative.",
