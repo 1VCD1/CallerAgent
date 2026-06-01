@@ -105,6 +105,7 @@ export default function ProfileScreen() {
         contentContainerStyle={s.scroll}
         keyboardShouldPersistTaps="handled"
         extraScrollHeight={120}
+        showsVerticalScrollIndicator={false}
         enableOnAndroid
       >
 

@@ -38,20 +38,44 @@ export default function CallDetailScreen() {
   const [audioLoading, setAudioLoading] = useState(false);
   const [position, setPosition] = useState(0);   // ms
   const [duration, setDuration] = useState(0);   // ms
+  const [playbackDone, setPlaybackDone] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
   const [note, setNote] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef      = useRef<Audio.Sound | null>(null);
+  const pollRef       = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastPosRef    = useRef(0);
+  const durationRef   = useRef(0); // mirror of duration state, always current inside intervals
 
-  const onPlaybackStatus = (status: any) => {
-    if (!status.isLoaded) return;
-    if (status.durationMillis) setDuration(status.durationMillis);
-    setPosition(status.positionMillis ?? 0);
-    if (!status.isPlaying && status.didJustFinish) {
-      setIsPlaying(false);
-      setPosition(0);
-    }
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
+
+  const startPolling = () => {
+    stopPolling();
+    let wasPlaying = false;
+    pollRef.current = setInterval(async () => {
+      if (!soundRef.current) return;
+      const status = await soundRef.current.getStatusAsync();
+      if (!status.isLoaded) return;
+      if ((status.durationMillis ?? 0) > 0) {
+        durationRef.current = status.durationMillis!;
+        setDuration(status.durationMillis!);
+      }
+      const pos = status.positionMillis ?? 0;
+      if (pos > 0) lastPosRef.current = pos;
+      setPosition(pos);
+
+      if (status.isPlaying) {
+        wasPlaying = true;
+      } else if (wasPlaying && !status.isPlaying) {
+        // was playing → now stopped = finished naturally
+        setIsPlaying(false);
+        setPlaybackDone(true); // stays at 100% until user presses play again
+        stopPolling();
+      }
+    }, 500);
   };
 
   useEffect(() => {
@@ -59,10 +83,16 @@ export default function CallDetailScreen() {
       setCall(c);
       if (c.ended_at) {
         getCompanyNote(c.company).then(n => setNote(n ?? '')).catch(() => {});
+        // Use call duration as fallback for recording duration
+        const ms = new Date(c.ended_at).getTime() - new Date(c.started_at).getTime();
+        if (ms > 0) { durationRef.current = ms; setDuration(ms); }
       }
     }).catch(console.warn).finally(() => setLoading(false));
     Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
-    return () => { soundRef.current?.unloadAsync(); };
+    return () => {
+      stopPolling();
+      soundRef.current?.unloadAsync();
+    };
   }, [id]);
 
   const saveNote = async () => {
@@ -80,6 +110,8 @@ export default function CallDetailScreen() {
     if (isPlaying) {
       await soundRef.current?.pauseAsync();
       setIsPlaying(false);
+      setPlaybackDone(false);
+      stopPolling();
       return;
     }
     setAudioLoading(true);
@@ -90,12 +122,14 @@ export default function CallDetailScreen() {
         const apiUrl = await getApiUrl();
         const { sound } = await Audio.Sound.createAsync(
           { uri: `${apiUrl}/api/calls/${id}/recording` },
-          { shouldPlay: true, progressUpdateIntervalMillis: 500 },
-          onPlaybackStatus
+          { shouldPlay: true }
         );
         soundRef.current = sound;
       }
       setIsPlaying(true);
+      setPlaybackDone(false);
+      setPosition(0);
+      startPolling();
     } catch (e) {
       console.warn('Audio error:', e);
     } finally {
@@ -150,7 +184,7 @@ export default function CallDetailScreen() {
         )}
       </View>
 
-      <ScrollView contentContainerStyle={s.scroll}>
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Header */}
         <Text style={s.company}>{call.company}</Text>
@@ -272,19 +306,21 @@ export default function CallDetailScreen() {
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Text style={s.recordingTitle}>{t('recording_title')}</Text>
-                {duration > 0 && (
-                  <Text style={s.recordingTime}>
-                    {fmtMs(position)} / {fmtMs(duration)}
-                  </Text>
+                {(isPlaying || position > 0) && (
+                  <Text style={s.recordingTime}>{fmtMs(position)}</Text>
                 )}
               </View>
               <Text style={s.recordingSubtitle}>
                 {isPlaying ? t('recording_playing') : t('recording_tap')}
               </Text>
-              {duration > 0 && (
+              {(isPlaying || position > 0 || playbackDone) && (
                 <View style={s.recordingProgressTrack}>
                   <View style={[s.recordingProgressFill, {
-                    width: `${Math.min((position / duration) * 100, 100)}%` as any,
+                    width: playbackDone
+                      ? '100%'
+                      : duration > 0
+                        ? `${Math.min((position / duration) * 100, 100)}%` as any
+                        : '0%',
                   }]} />
                 </View>
               )}

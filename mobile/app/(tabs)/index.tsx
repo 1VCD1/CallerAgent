@@ -148,13 +148,19 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
     }
   }, [transcripts.length]);
 
-  // When transcript panel opens, jump to bottom immediately
+  // Jump to bottom when panel opens
   useEffect(() => {
     if (showTranscript) {
       atBottom.current = true;
       setTimeout(() => transcriptRef.current?.scrollToEnd({ animated: false }), 50);
     }
   }, [showTranscript]);
+
+  // Auto-scroll only when new message arrives AND user is already at bottom
+  useEffect(() => {
+    if (!showTranscript || !atBottom.current) return;
+    transcriptRef.current?.scrollToEnd({ animated: true });
+  }, [transcripts.length]);
 
   const STEPS = STEP_KEYS.map(s => ({ ...s, label: t(s.tKey) }));
   const stepIdx = STEPS.findIndex(st => st.key === orbState);
@@ -173,7 +179,8 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
 
       {/* Center: Orb + status block + transcript */}
       <View style={[s.callCenter, showTranscript && { justifyContent: 'flex-start' }]}>
-        <View style={[s.callOrbBlock, showTranscript && { paddingTop: 12, paddingBottom: 4 }]}>
+        {!showTranscript && (
+        <View style={s.callOrbBlock}>
         <DynamicOrb orbState={orbState} speakingTick={speakingTick} />
 
         {isHuman ? (
@@ -216,7 +223,8 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
             )}
           </View>
         )}
-        </View>{/* end callOrbBlock */}
+        </View>
+        )}{/* end callOrbBlock */}
 
         {/* Transcript toggle */}
         <TouchableOpacity style={s.transcriptToggle} onPress={() => setShowTranscript(v => !v)}>
@@ -235,14 +243,14 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
             ref={transcriptRef}
             style={s.transcriptList}
             contentContainerStyle={{ padding: 12, paddingTop: 8 }}
-            onContentSizeChange={() => {
-              if (atBottom.current) transcriptRef.current?.scrollToEnd({ animated: true });
-            }}
+            bounces={false}
+            showsVerticalScrollIndicator={false}
+            onScrollBeginDrag={() => { atBottom.current = false; }}
             onScroll={(e) => {
               const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
               atBottom.current = layoutMeasurement.height + contentOffset.y >= contentSize.height - 40;
             }}
-            scrollEventThrottle={100}
+            scrollEventThrottle={16}
           >
             {transcripts.length === 0 ? (
               <Text style={s.transcriptEmpty}>{t('waiting_ivr')}</Text>
@@ -267,7 +275,7 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
       </View>
 
       {/* Bottom: info box */}
-      {!isHuman && (
+      {!isHuman && !showTranscript && (
         <View style={s.callBottom}>
           <View style={s.callInfoBox}>
             <View style={s.callInfoIconWrap}>
@@ -434,6 +442,7 @@ export default function CallScreen() {
         contentContainerStyle={s.scroll}
         keyboardShouldPersistTaps="handled"
         extraScrollHeight={120}
+        showsVerticalScrollIndicator={false}
         enableOnAndroid
       >
 
@@ -667,7 +676,7 @@ const s = StyleSheet.create({
   transcriptToggleTxt: { fontSize: 13, fontWeight: '600', color: colors.subtext },
   transcriptBadge:     { backgroundColor: colors.border, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
   transcriptBadgeTxt:  { fontSize: 10, fontWeight: '700', color: colors.muted },
-  transcriptList:      { flex: 1 },
+  transcriptList:      { flex: 1, alignSelf: 'stretch' },
   transcriptEmpty:     { color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 16 },
 
   // Chat bubble layout

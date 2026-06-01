@@ -123,6 +123,7 @@ export default function HistoryScreen() {
         data={filtered}
         keyExtractor={c => c.id}
         contentContainerStyle={s.list}
+        showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.green} />}
         ListEmptyComponent={
           <View style={s.empty}>

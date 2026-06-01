@@ -115,7 +115,17 @@ ${ctx.userInfo.phoneNumber ? `  Callback phone: ${ctx.userInfo.phoneNumber} ← 
   const consistencyWarning = ctx.speakerChanged
     ? `🔔 SPEAKER CHANGE DETECTED: Deepgram's audio diarization has detected a NEW VOICE on the line. This is a strong signal that a human agent has joined the call. Set is_human=true with high confidence.`
     : avgPastConfidence !== null && avgPastConfidence < 0.2
-    ? `📋 VOICE HISTORY NOTE: Previous ${ctx.recentHumanConfidences!.length - 1} turns had low human confidence (avg ${Math.round(avgPastConfidence * 100)}%) — normal for IVR navigation. This does NOT prevent escalation. If the current utterance contains ANY human signal (name introduction, "who's calling?", "can you hear me?", confusion, disfluencies), escalate immediately.`
+    ? `📋 VOICE HISTORY: Previous ${ctx.recentHumanConfidences!.length - 1} turns all had very low human confidence (avg ${Math.round(avgPastConfidence * 100)}%). This is strong evidence you are still in an IVR system — possibly a modern conversational AI IVR that sounds natural but is not human.
+
+DO NOT escalate based on conversational tone alone. Many modern IVRs (e.g. "I'm Miles, your AI assistant") speak naturally and in context, but are still automated systems.
+
+To escalate from this state, you need ONE of these HARD signals:
+- Deepgram speaker change (new voice detected)
+- The person explicitly states their name AND role ("This is John, how can I help?")
+- The person reacts with confusion or frustration at your actions ("Stop pressing keys!", "Who is this?")
+- The person asks WHO is calling ("Who's calling?", "Can I ask who's on the line?")
+
+Conversational phrasing ("Of course", "I can help with that", "What's your question?") is NOT sufficient — modern AI IVRs say these things too.`
     : '';
 
   const menuKeysBlock = ctx.availableMenuKeys && ctx.availableMenuKeys.length > 0
