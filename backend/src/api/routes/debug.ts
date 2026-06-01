@@ -35,20 +35,19 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
           -- Stage 2: phone actually picked up (not busy/no-answer/invalid/dial_failed)
           COUNT(*) FILTER (WHERE COALESCE(ended_reason,'') NOT IN
             ('dial_failed','busy','no-answer','invalid_number'))                       AS connected,
-          -- Stage 3: AI actually navigated (had at least one action)
-          COUNT(*) FILTER (WHERE EXISTS (
-            SELECT 1 FROM action_history ah WHERE ah.call_id = calls.id
-          ))                                                                            AS navigated,
+          -- Stage 3: calls that completed normally (AI had a chance to navigate)
+          COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED','BRIDGED')
+            AND COALESCE(ended_reason,'') NOT IN
+              ('server_restart','dial_failed','busy','no-answer'))                     AS navigated,
           -- Stage 4: human reached OR callback with number given (both count as success)
           COUNT(*) FILTER (WHERE human_reached
             OR ended_reason IN ('callback_number_given','callback_offered'))           AS human_reached,
           -- AI performance denominator: navigated calls where success was theoretically possible
-          COUNT(*) FILTER (WHERE
-            EXISTS (SELECT 1 FROM action_history ah WHERE ah.call_id = calls.id)
+          COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED','BRIDGED')
             AND COALESCE(ended_reason,'') NOT IN
-              ('outside_hours','voicemail','voicemail_left','invalid_number',
-               'busy','no-answer','callback_caller_id','server_restart','dial_failed')
-          )                                                                            AS navigable
+              ('server_restart','dial_failed','busy','no-answer',
+               'outside_hours','voicemail','voicemail_left','invalid_number',
+               'callback_caller_id'))                                                  AS navigable
         FROM calls
         WHERE started_at > NOW() - INTERVAL '7 days'
       `),
@@ -68,8 +67,11 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
           COUNT(DISTINCT c.id) FILTER (WHERE c.ended_reason = 'callback_caller_id') AS callback_caller_id_count
         FROM calls c
         LEFT JOIN LATERAL (
-          SELECT call_id FROM action_history ah
-          WHERE ah.call_id = c.id LIMIT 1
+          SELECT c2.id AS call_id FROM calls c2
+          WHERE c2.id = c.id
+            AND c2.status IN ('ENDED','FAILED','BRIDGED')
+            AND COALESCE(c2.ended_reason,'') NOT IN ('server_restart','dial_failed','busy','no-answer')
+          LIMIT 1
         ) nav_flag ON true
         LEFT JOIN LATERAL (
           SELECT call_id FROM call_debug_logs dl
@@ -87,17 +89,18 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
       `),
       query<any>(`
         SELECT
+          company,
           CASE
-            WHEN human_reached                                    THEN 'human_reached'
-            WHEN ended_reason = 'callback_number_given'          THEN 'callback_number_given'
-            WHEN ended_reason = 'callback_caller_id'             THEN 'callback_caller_id'
-            WHEN ended_reason = 'completed'                      THEN 'no_human_path'
+            WHEN human_reached                          THEN 'human_reached'
+            WHEN ended_reason = 'callback_number_given' THEN 'callback_number_given'
+            WHEN ended_reason = 'callback_caller_id'    THEN 'callback_caller_id'
+            WHEN ended_reason = 'completed'             THEN 'no_human_path'
             ELSE COALESCE(ended_reason, status)
           END AS outcome,
           COUNT(*) AS count
         FROM calls
         WHERE started_at > NOW() - INTERVAL '7 days'
-        GROUP BY outcome ORDER BY count DESC LIMIT 12
+        GROUP BY company, outcome ORDER BY company, count DESC
       `),
       query<any>(`
         SELECT

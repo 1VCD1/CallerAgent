@@ -393,22 +393,64 @@ function kpiCard(label, value, color, sub) {
   </div>`;
 }
 
+let _outcomesRaw = [];
+let _outcomeView = 'all'; // 'all' | company name
+
 function renderOutcomes(outcomes) {
   if (!outcomes?.length) return;
-  const total = outcomes.reduce((s, o) => s + parseInt(o.count), 0);
-  document.getElementById('outcomes-chart').innerHTML = outcomes.map(o => {
-    const pct = total ? Math.round(parseInt(o.count) / total * 100) : 0;
-    const color = o.outcome === 'human_reached' ? '#10b981'
-                : o.outcome.includes('voicemail') ? '#f59e0b'
-                : o.outcome.includes('hours') ? '#f59e0b'
-                : o.outcome === 'callback_offered' ? '#3b82f6'
-                : '#ef4444';
-    return `<div class="flex items-center gap-2">
-      <div class="text-slate-400 text-xs w-36 truncate" title="${o.outcome}">${outcomeLabel(o.outcome)}</div>
+  _outcomesRaw = outcomes;
+
+  // Build company list for filter
+  const companies = [...new Set(outcomes.map(o => o.company))].sort();
+  const filterHtml = `<div class="flex flex-wrap gap-1 mb-3">
+    <button onclick="setOutcomeView('all')" id="ov-all"
+      class="text-xs px-2 py-0.5 rounded border border-slate-600 bg-slate-700 text-slate-200">All</button>
+    ${companies.map(c => `<button onclick="setOutcomeView('${c.replace(/'/g,"\\'")})" id="ov-${c.replace(/\s/g,'_')}"
+      class="text-xs px-2 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-slate-500">${c}</button>`).join('')}
+  </div>`;
+
+  document.getElementById('outcomes-chart').innerHTML = filterHtml + '<div id="outcomes-bars"></div>';
+  renderOutcomeBars('all');
+}
+
+function setOutcomeView(company) {
+  _outcomeView = company;
+  // Update button styles
+  document.querySelectorAll('[id^="ov-"]').forEach(b => {
+    b.className = 'text-xs px-2 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-slate-500';
+  });
+  const activeId = company === 'all' ? 'ov-all' : 'ov-' + company.replace(/\s/g,'_');
+  const activeBtn = document.getElementById(activeId);
+  if (activeBtn) activeBtn.className = 'text-xs px-2 py-0.5 rounded border border-slate-600 bg-slate-700 text-slate-200';
+  renderOutcomeBars(company);
+}
+
+function renderOutcomeBars(company) {
+  const filtered = company === 'all'
+    ? _outcomesRaw
+    : _outcomesRaw.filter(o => o.company === company);
+
+  // Aggregate by outcome
+  const agg = {};
+  for (const o of filtered) {
+    agg[o.outcome] = (agg[o.outcome] || 0) + parseInt(o.count);
+  }
+  const sorted = Object.entries(agg).sort((a, b) => b[1] - a[1]);
+  const total = sorted.reduce((s, [, c]) => s + c, 0);
+
+  const outcomeColor = o => o === 'human_reached' || o === 'callback_number_given' ? '#10b981'
+    : o.includes('voicemail') || o.includes('hours') ? '#f59e0b'
+    : o === 'callback_caller_id' ? '#f97316'
+    : '#ef4444';
+
+  document.getElementById('outcomes-bars').innerHTML = sorted.map(([outcome, count]) => {
+    const pct = total ? Math.round(count / total * 100) : 0;
+    return `<div class="flex items-center gap-2 mb-1.5">
+      <div class="text-slate-400 text-xs w-36 truncate" title="${outcome}">${outcomeLabel(outcome)}</div>
       <div class="flex-1 bg-slate-700 rounded-full h-2 overflow-hidden">
-        <div style="width:${pct}%;background:${color}" class="h-full rounded-full transition-all duration-500"></div>
+        <div style="width:${pct}%;background:${outcomeColor(outcome)}" class="h-full rounded-full transition-all duration-500"></div>
       </div>
-      <div class="text-slate-300 text-xs w-12 text-right">${o.count} <span class="text-slate-500">${pct}%</span></div>
+      <div class="text-slate-300 text-xs w-14 text-right">${count} <span class="text-slate-500">${pct}%</span></div>
     </div>`;
   }).join('');
 }
