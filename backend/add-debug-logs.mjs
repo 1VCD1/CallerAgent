@@ -1,6 +1,9 @@
 import pg from 'pg';
+import { config } from 'dotenv';
+config();
+
 const { Client } = pg;
-const client = new Client({ connectionString: 'postgresql://postgres:ipFYqAMiWFsiyYHezkxXEkpxWupVfCkF@zephyr.proxy.rlwy.net:25776/railway' });
+const client = new Client({ connectionString: process.env.DATABASE_URL });
 await client.connect();
 await client.query(`
   CREATE TABLE IF NOT EXISTS call_debug_logs (
