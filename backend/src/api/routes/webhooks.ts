@@ -11,6 +11,7 @@ import { getLang, buildVoicemailMessage } from '../../languages';
 import { isOutsideBusinessHours, isCallbackOffer, isVoicemailGreeting, isInvalidOrDisconnected, extractMenuKeys } from '../../services/human-detector';
 import { generateCallSummary, getCompanyIvrNotes } from '../../services/call-summarizer';
 import { emitCallStatus } from '../../services/call-events';
+import { logDebug } from '../../services/debug-logger';
 
 // Derive the public base URL (scheme + host, no path) from webhookBaseUrl for Twilio sig validation
 const webhookOrigin = (() => {
@@ -446,6 +447,40 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       if (safeAction !== action.action) {
         console.log(`[Gather] escalate_to_user downgraded to wait (humanConf=${humanConf.toFixed(2)} < 0.75)`);
       }
+
+      logDebug(callId, 'llm_decision', {
+        action: safeAction,
+        value: safeValue ?? null,
+        original_action: safeAction !== action.action ? action.action : null,
+        reasoning: action.reasoning,
+        confidence: action.confidence ?? null,
+        is_human: action.isHuman ?? false,
+        human_confidence: action.humanConfidence ?? null,
+        ended_reason: action.endedReason ?? null,
+        decision_source: prefetched ? 'prefetch' : 'fresh',
+        latency_ms: action.latencyMs ?? null,
+        state: currentStatus,
+        ivr_utterance: spokenText || null,
+        consecutive_waits: consecutiveWaits,
+        consecutive_same_key: consecutiveSameKey ?? null,
+        consecutive_same_phrase: consecutiveSamePhrase ?? null,
+        consecutive_low_confidence: lowConf > 0 ? lowConf : null,
+        available_menu_keys: availableMenuKeys.length > 0 ? availableMenuKeys : null,
+        speaker_changed: orchestrator?.getSpeakerChanged() ?? false,
+        recent_human_confidences: recentHumanConfidences.slice(-5),
+        transfer_pending: transferPending,
+        human_threshold: humanThreshold,
+        total_actions_so_far: totalActions,
+        downgraded: safeAction !== action.action,
+        low_conf_counter_new: newLowConf,
+        audio_frames: context.audioAnalysis?.framesAnalyzed ?? null,
+        audio_confidence: context.audioAnalysis?.confidence ?? null,
+        audio_is_human: context.audioAnalysis?.isHuman ?? null,
+        audio_post_ring_pickup: context.audioAnalysis?.postRingPickup ?? null,
+        audio_rms_variance: context.audioAnalysis?.rmsVariance ?? null,
+        audio_pitch_variance: context.audioAnalysis?.pitchVariance ?? null,
+        audio_has_disfluencies: context.audioAnalysis?.hasDisfluencies ?? null,
+      });
 
       // Save AI action as transcript entry using the ACTUAL executed action (safeAction)
       const al = langConfig.actionLabels;

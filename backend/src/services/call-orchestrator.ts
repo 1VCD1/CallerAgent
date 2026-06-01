@@ -12,6 +12,7 @@ import { query, queryOne } from '../db/client';
 import { config } from '../config';
 import { CallContext, ActionRecord, LLMAction, Call, UserInfo } from '../types';
 import { getLang } from '../languages';
+import { logDebug } from './debug-logger';
 
 const MAX_NAVIGATION_ATTEMPTS = 20;
 const HUMAN_CONFIDENCE_THRESHOLD = 0.75;
@@ -155,6 +156,27 @@ export class CallOrchestrator {
     }
 
     const detection = detectHumanCombined(text, audioNow);
+
+    logDebug(this.call.id, 'human_detection', {
+      path: 'deepgram',
+      transcript: text,
+      is_human: detection.isHuman,
+      confidence: detection.confidence,
+      signal: detection.signal,
+      above_threshold: detection.confidence >= HUMAN_CONFIDENCE_THRESHOLD,
+      audio_confidence: detection.audioConfidence ?? null,
+      keyword_confidence: detection.keywordConfidence ?? null,
+      non_human_patterns_matched: detection.nonHumanPatternsMatched ?? [],
+      human_patterns_matched: detection.humanPatternsMatched ?? [],
+      disfluency_score: detection.disfluencyScore ?? 0,
+      speaker_changed: this.speakerChanged,
+      audio_frames: audioNow?.framesAnalyzed ?? 0,
+      audio_post_ring_pickup: audioNow?.postRingPickup ?? false,
+      audio_rms_variance: audioNow?.rmsVariance ?? null,
+      audio_pitch_variance: audioNow?.pitchVariance ?? null,
+      audio_has_disfluencies: audioNow?.hasDisfluencies ?? false,
+    });
+
     if (
       detection.isHuman &&
       detection.confidence >= HUMAN_CONFIDENCE_THRESHOLD &&
@@ -452,6 +474,24 @@ export class CallOrchestrator {
       goal: this.call.goal,
       humanReached: this.call.humanReached,
       waitDurationSeconds: callRow?.wait_duration_seconds,
+    });
+
+    const actionsBreakdown = this.actionHistory.reduce((acc, a) => {
+      acc[a.action] = (acc[a.action] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    logDebug(this.call.id, 'call_summary', {
+      duration_secs: Math.round((Date.now() - this.call.startedAt.getTime()) / 1000),
+      total_actions: this.actionHistory.length,
+      failed_actions: this.actionHistory.filter(a => !a.success).length,
+      actions_breakdown: actionsBreakdown,
+      human_reached: this.call.humanReached,
+      final_state: this.stateMachine.getStatus(),
+      recent_failures: this.recentFailures.slice(-5),
+      language: this.language,
+      company: this.call.company,
+      goal: this.call.goal,
     });
 
     // Fire post-call LLM summary in background — don't block

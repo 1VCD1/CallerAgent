@@ -86,6 +86,7 @@ export async function decideLLMAction(context: CallContext): Promise<LLMAction> 
   for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
     if (RETRY_DELAYS[attempt] > 0) await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
     try {
+      const llmStart = Date.now();
       const response = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         max_tokens: 320,
@@ -97,6 +98,7 @@ export async function decideLLMAction(context: CallContext): Promise<LLMAction> 
       });
       const text = response.choices[0]?.message?.content ?? '';
       const action = parseAction(text);
+      action.latencyMs = Date.now() - llmStart;
       await persistAction(context.callId, action);
       return action;
     } catch (err: any) {

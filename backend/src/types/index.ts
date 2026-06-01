@@ -26,6 +26,7 @@ export interface LLMAction {
   confidence?: number;
   isHuman?: boolean;
   humanConfidence?: number;
+  latencyMs?: number;
 }
 
 export interface UserInfo {

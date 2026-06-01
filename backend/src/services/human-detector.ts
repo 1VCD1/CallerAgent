@@ -63,6 +63,10 @@ export interface HumanDetectionResult {
   signal: string;
   audioConfidence?: number;
   keywordConfidence?: number;
+  // Debug fields
+  nonHumanPatternsMatched?: string[];
+  humanPatternsMatched?: string[];
+  disfluencyScore?: number;
 }
 
 // Primary: audio pitch/amplitude analysis
@@ -90,9 +94,8 @@ export function detectHumanCombined(
   }
 
   // --- Layer 2: Keyword matching (SECONDARY) ---
-  const nonHumanScore = NON_HUMAN_INDICATORS.reduce(
-    (score, pattern) => score + (pattern.test(transcript) ? 1 : 0), 0
-  );
+  const nonHumanMatched = NON_HUMAN_INDICATORS.filter(p => p.test(transcript)).map(p => p.source);
+  const nonHumanScore = nonHumanMatched.length;
 
   if (nonHumanScore >= 1) {
     return {
@@ -101,12 +104,14 @@ export function detectHumanCombined(
       signal: 'ivr_keywords',
       audioConfidence: audioScore,
       keywordConfidence: 0.0,
+      nonHumanPatternsMatched: nonHumanMatched,
+      humanPatternsMatched: [],
+      disfluencyScore: 0,
     };
   }
 
-  const humanScore = HUMAN_INDICATORS.reduce(
-    (score, pattern) => score + (pattern.test(transcript) ? 1 : 0), 0
-  );
+  const humanMatched = HUMAN_INDICATORS.filter(p => p.test(transcript)).map(p => p.source);
+  const humanScore = humanMatched.length;
 
   // --- Layer 3: Disfluencies (TERTIARY) ---
   const disfluencyScore = DISFLUENCY_PATTERNS.reduce(
@@ -138,6 +143,9 @@ export function detectHumanCombined(
     signal: isHuman ? 'combined_human' : 'combined_ivr',
     audioConfidence: audioScore,
     keywordConfidence: keywordSignal,
+    nonHumanPatternsMatched: [],
+    humanPatternsMatched: humanMatched,
+    disfluencyScore,
   };
 }
 
