@@ -678,7 +678,10 @@ function outcomeLabel(outcome) {
 }
 
 function outcomePill(call) {
-  const outcome = call.human_reached ? 'human_reached' : (call.ended_reason ?? call.status);
+  const raw = call.ended_reason ?? call.status;
+  const outcome = call.human_reached ? 'human_reached'
+                : raw === 'completed' ? 'no_human_path'
+                : raw;
   const colors = {
     human_reached: 'bg-emerald-900 text-emerald-300',
     no_human_path: 'bg-red-900 text-red-300',
