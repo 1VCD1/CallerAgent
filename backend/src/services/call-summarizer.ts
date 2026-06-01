@@ -115,6 +115,83 @@ Format: plain bullet points starting with "-". No headers.`,
   return response.choices[0]?.message?.content?.trim() ?? `${existing}\n${fresh}`;
 }
 
+// Called when user marks a human_reached call as a false positive.
+// Generates a correction note so future calls to the same company avoid the same mistake.
+export async function generateFeedbackCorrection(callId: string): Promise<void> {
+  const callRow = await query<{ company: string; goal: string }>(
+    `SELECT company, goal FROM calls WHERE id = $1`,
+    [callId]
+  );
+  if (!callRow[0]) return;
+  const { company, goal } = callRow[0];
+
+  const transcripts = await query<{ speaker: string; text: string }>(
+    `SELECT speaker, text FROM transcripts WHERE call_id = $1 ORDER BY timestamp ASC`,
+    [callId]
+  );
+  if (transcripts.length === 0) return;
+
+  const transcript = transcripts.map(t => `[${t.speaker}] ${t.text}`).join('\n');
+
+  // Find the IVR utterance that likely triggered the false escalation
+  const ivrLines = transcripts.filter(t => t.speaker === 'IVR');
+  const lastIvr  = ivrLines[ivrLines.length - 1]?.text ?? '(unknown)';
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    max_tokens: 400,
+    messages: [
+      {
+        role: 'system',
+        content: `You analyze phone call transcripts where an AI agent was tricked into thinking an IVR/automated system was a real human. Write a correction note so future calls avoid the same mistake.`,
+      },
+      {
+        role: 'user',
+        content: `Company: ${company}
+Goal: ${goal}
+Outcome: FALSE POSITIVE — user confirmed this was NOT a real human. The AI was fooled by a conversational IVR bot.
+
+The phrase that most likely triggered the false detection:
+"${lastIvr}"
+
+Full transcript:
+${transcript}
+
+Write 2-4 bullet points covering:
+- What the IVR said that sounded human but wasn't (be specific, quote the phrases)
+- That this company uses a conversational AI bot (not a human) — name it if identifiable
+- What signals should have indicated it was still automated
+- How to avoid this mistake next time
+
+Format: plain bullet points starting with "-". Be specific and direct.`,
+      },
+    ],
+  });
+
+  const correction = response.choices[0]?.message?.content?.trim() ?? '';
+  if (!correction) return;
+
+  const existing = await query<{ id: string; summary: string }>(
+    `SELECT id, summary FROM company_ivr_notes WHERE LOWER(company) = LOWER($1) ORDER BY updated_at DESC LIMIT 1`,
+    [company]
+  );
+
+  if (existing[0]) {
+    const merged = await consolidateNotes(existing[0].summary, `⚠️ FALSE POSITIVE CORRECTION:\n${correction}`, company);
+    await query(
+      `UPDATE company_ivr_notes SET summary = $1, outcome = 'false_positive_corrected', updated_at = NOW() WHERE id = $2`,
+      [merged, existing[0].id]
+    );
+  } else {
+    await query(
+      `INSERT INTO company_ivr_notes (company, summary, outcome) VALUES ($1, $2, 'false_positive_corrected')`,
+      [company, `⚠️ FALSE POSITIVE CORRECTION:\n${correction}`]
+    );
+  }
+
+  console.log(`[Summarizer] Saved false-positive correction for ${company}`);
+}
+
 export async function getCompanyIvrNotes(company: string): Promise<string | null> {
   const rows = await query<{ summary: string; outcome: string; updated_at: Date }>(
     `SELECT summary, outcome, updated_at FROM company_ivr_notes WHERE LOWER(company) = LOWER($1) ORDER BY updated_at DESC LIMIT 3`,

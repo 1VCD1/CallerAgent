@@ -269,6 +269,13 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
       const { confirmed } = request.body as { confirmed: boolean };
       if (typeof confirmed !== 'boolean') return reply.status(400).send({ error: 'confirmed must be boolean' });
       await query(`UPDATE calls SET user_confirmed = $1 WHERE id = $2`, [confirmed, id]);
+      // If user marks as false positive, regenerate IVR notes with correction
+      if (!confirmed) {
+        const { generateFeedbackCorrection } = await import('../../services/call-summarizer');
+        generateFeedbackCorrection(id).catch(err =>
+          console.error('[Feedback] Failed to generate correction:', err)
+        );
+      }
       return { ok: true };
     }
   );
