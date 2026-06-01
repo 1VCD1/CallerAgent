@@ -10,6 +10,9 @@ node_modules/
 cloudflared.exe
 ngrok.exe
 
+# One-off migration/query scripts (may contain hardcoded credentials)
+backend/*.mjs
+
 # Logs
 *.log
 server.log
