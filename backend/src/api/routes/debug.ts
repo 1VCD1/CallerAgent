@@ -3,19 +3,11 @@ import { query, queryOne } from '../../db/client';
 
 const debugPlugin: FastifyPluginAsync = async (fastify) => {
 
-  // Aggregated KPIs + outcome breakdown + company table (last 7 days)
+  // Aggregated KPIs + funnel + outcome breakdown + company table (last 7 days)
   fastify.get('/debug/overview', async () => {
-    const [kpis, outcomes, companies] = await Promise.all([
+    const [kpis, funnel, outcomes, companies] = await Promise.all([
       queryOne<any>(`
         SELECT
-          COUNT(DISTINCT c.id)                                                          AS total_calls,
-          COUNT(DISTINCT c.id) FILTER (WHERE c.human_reached)                          AS successful,
-          -- Only count real navigated calls (exclude server_restart, dial_failed, still-active)
-          COUNT(DISTINCT c.id) FILTER (WHERE c.status IN ('ENDED','FAILED','BRIDGED')
-            AND COALESCE(c.ended_reason,'') NOT IN ('server_restart','dial_failed'))   AS real_calls,
-          ROUND(COUNT(DISTINCT c.id) FILTER (WHERE c.human_reached)::numeric /
-            NULLIF(COUNT(DISTINCT c.id) FILTER (WHERE c.status IN ('ENDED','FAILED','BRIDGED')
-              AND COALESCE(c.ended_reason,'') NOT IN ('server_restart','dial_failed')), 0) * 100) AS success_pct,
           ROUND(AVG((dl.data->>'latency_ms')::int) FILTER (
             WHERE dl.event_type = 'llm_decision' AND dl.data->>'latency_ms' IS NOT NULL
           ))                                                                            AS avg_latency_ms,
@@ -30,6 +22,23 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
         FROM calls c
         LEFT JOIN call_debug_logs dl ON dl.call_id = c.id
         WHERE c.started_at > NOW() - INTERVAL '7 days'
+      `),
+      queryOne<any>(`
+        SELECT
+          -- Stage 1: all call attempts
+          COUNT(*)                                                                      AS initiated,
+          -- Stage 2: phone actually picked up (not busy/no-answer/invalid/dial_failed)
+          COUNT(*) FILTER (WHERE COALESCE(ended_reason,'') NOT IN
+            ('dial_failed','busy','no-answer','invalid_number'))                       AS connected,
+          -- Stage 3: AI actually navigated (had at least one LLM decision)
+          COUNT(*) FILTER (WHERE EXISTS (
+            SELECT 1 FROM call_debug_logs dl
+            WHERE dl.call_id = calls.id AND dl.event_type = 'llm_decision'
+          ))                                                                            AS navigated,
+          -- Stage 4: human reached
+          COUNT(*) FILTER (WHERE human_reached)                                        AS human_reached
+        FROM calls
+        WHERE started_at > NOW() - INTERVAL '7 days'
       `),
       query<any>(`
         SELECT
@@ -56,7 +65,7 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
         ORDER BY total DESC LIMIT 15
       `)
     ]);
-    return { kpis, outcomes, companies };
+    return { kpis, funnel, outcomes, companies };
   });
 
   // Paginated call list with per-call debug flags

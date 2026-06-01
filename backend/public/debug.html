@@ -44,14 +44,18 @@
 
 <!-- OVERVIEW TAB -->
 <div id="screen-overview" class="p-6 max-w-7xl mx-auto">
-  <!-- KPI cards -->
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="kpi-row">
-    <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
-    <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
+  <!-- Funnel -->
+  <div class="bg-slate-800 rounded-lg p-5 mb-4">
+    <h3 class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-4">Call Funnel (7d)</h3>
+    <div id="funnel-row" class="grid grid-cols-4 gap-0">
+      <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
+    </div>
+  </div>
+  <!-- Latency cards + Outcomes + Companies -->
+  <div class="grid grid-cols-2 gap-4 mb-4" id="kpi-row">
     <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
     <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
   </div>
-  <!-- Outcomes + Companies -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     <div class="bg-slate-800 rounded-lg p-4">
       <h3 class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3">Outcomes (7d)</h3>
@@ -174,22 +178,56 @@ async function api(path) {
 // ─── Overview ─────────────────────────────────────────────────────────────────
 async function loadOverview() {
   const data = await api('/debug/overview');
+  renderFunnel(data.funnel);
   renderKpis(data.kpis);
   renderOutcomes(data.outcomes);
   renderCompanies(data.companies);
   document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
 
+function renderFunnel(f) {
+  if (!f) return;
+  const initiated    = parseInt(f.initiated)    || 0;
+  const connected    = parseInt(f.connected)    || 0;
+  const navigated    = parseInt(f.navigated)    || 0;
+  const humanReached = parseInt(f.human_reached) || 0;
+
+  const pct = (n, d) => d ? Math.round(n / d * 100) : 0;
+  const connRate = pct(connected,    initiated);
+  const navRate  = pct(navigated,    connected);
+  const succRate = pct(humanReached, navigated);
+
+  const dropped = (stage, prev, cur, reasons) =>
+    prev - cur > 0 ? `<div class="text-red-400 text-xs mt-1">-${prev - cur} ${reasons}</div>` : '';
+
+  document.getElementById('funnel-row').innerHTML = `
+    ${funnelStage('📞 Initiated',     initiated,    initiated,   'text-blue-400',    '100%',      '', '')}
+    ${funnelStage('📶 Connected',     connected,    initiated,   connRate >= 80 ? 'text-emerald-400' : 'text-amber-400', connRate + '%', 'of initiated', `-${initiated - connected} busy / no-answer / invalid`)}
+    ${funnelStage('🤖 AI Navigated',  navigated,    connected,   navRate  >= 80 ? 'text-emerald-400' : 'text-amber-400', navRate  + '%', 'of connected', `-${connected - navigated} server_restart / quick-end`)}
+    ${funnelStage('✅ Human Reached', humanReached, navigated,   succRate >= 50 ? 'text-emerald-400' : succRate >= 25 ? 'text-amber-400' : 'text-red-400', succRate + '%', 'of navigated', `-${navigated - humanReached} no_human_path / outside_hours / etc`)}
+  `;
+}
+
+function funnelStage(label, count, denom, color, rate, rateSub, dropped) {
+  const barW = denom ? Math.round(count / denom * 100) : 100;
+  return `<div class="border-r border-slate-700 last:border-0 px-4 first:pl-0 last:pr-0">
+    <div class="text-slate-400 text-xs mb-1">${label}</div>
+    <div class="text-2xl font-bold ${color}">${count}</div>
+    <div class="text-slate-500 text-xs">${rate} ${rateSub}</div>
+    <div class="mt-2 bg-slate-700 rounded-full h-1.5 overflow-hidden">
+      <div class="h-full rounded-full bg-current ${color} transition-all duration-700" style="width:${barW}%"></div>
+    </div>
+    ${dropped ? `<div class="text-slate-600 text-xs mt-1 leading-tight">${dropped}</div>` : ''}
+  </div>`;
+}
+
 function renderKpis(k) {
   if (!k) return;
-  const successColor = k.success_pct >= 70 ? 'text-emerald-400' : k.success_pct >= 40 ? 'text-amber-400' : 'text-red-400';
-  const latencyColor = k.avg_latency_ms <= 500 ? 'text-emerald-400' : k.avg_latency_ms <= 1000 ? 'text-amber-400' : 'text-red-400';
-  const prefetchColor = k.prefetch_pct >= 60 ? 'text-emerald-400' : 'text-amber-400';
+  const latencyColor  = !k.avg_latency_ms || k.avg_latency_ms <= 500 ? 'text-emerald-400' : k.avg_latency_ms <= 1000 ? 'text-amber-400' : 'text-red-400';
+  const prefetchColor = !k.prefetch_pct || k.prefetch_pct >= 60 ? 'text-emerald-400' : 'text-amber-400';
   document.getElementById('kpi-row').innerHTML = `
-    ${kpiCard('Total Calls (7d)', k.total_calls ?? '—', 'text-blue-400', `${k.calls_24h ?? 0} in last 24h`)}
-    ${kpiCard('Success Rate', k.success_pct != null ? k.success_pct + '%' : '—', successColor, `${k.successful ?? 0} of ${k.real_calls ?? 0} navigated calls`)}
-    ${kpiCard('Avg LLM Latency', k.avg_latency_ms ? k.avg_latency_ms + 'ms' : '—', latencyColor, `p95: ${k.p95_latency_ms ?? '—'}ms`)}
-    ${kpiCard('Prefetch Hit Rate', k.prefetch_pct != null ? k.prefetch_pct + '%' : '—', prefetchColor, 'AI decision reuse')}
+    ${kpiCard('Avg LLM Latency', k.avg_latency_ms ? k.avg_latency_ms + 'ms' : '—', latencyColor, `p95: ${k.p95_latency_ms ?? '—'}ms · ${k.calls_24h ?? 0} calls in 24h`)}
+    ${kpiCard('Prefetch Hit Rate', k.prefetch_pct != null ? k.prefetch_pct + '%' : '—', prefetchColor, 'AI decision reuse before Gather fires')}
   `;
 }
 
