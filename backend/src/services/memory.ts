@@ -134,18 +134,26 @@ export interface ActionPattern {
 }
 
 export async function getActionPatterns(company: string): Promise<ActionPattern[]> {
+  // success_pct = % of CALLS where this action was used that ultimately reached a human
+  // (call-level, not action-level — action_history.success only reflects API execution, not IVR outcome)
   const rows = await query<{
     action: string; value: string | null;
     total: string; success_pct: string;
   }>(
     `SELECT ah.action, ah.value,
-            COUNT(*) AS total,
-            ROUND(AVG(CASE WHEN ah.success THEN 1 ELSE 0 END) * 100) AS success_pct
+            COUNT(DISTINCT ah.call_id) AS total,
+            ROUND(
+              COUNT(DISTINCT ah.call_id) FILTER (
+                WHERE c.human_reached
+                   OR c.ended_reason IN ('callback_number_given', 'callback_offered')
+              )::numeric / COUNT(DISTINCT ah.call_id) * 100
+            ) AS success_pct
      FROM action_history ah
      JOIN calls c ON c.id = ah.call_id
      WHERE LOWER(c.company) = LOWER($1)
+       AND c.status IN ('ENDED', 'FAILED', 'BRIDGED')
      GROUP BY ah.action, ah.value
-     HAVING COUNT(*) >= 2
+     HAVING COUNT(DISTINCT ah.call_id) >= 2
      ORDER BY total DESC
      LIMIT 15`,
     [company]
