@@ -50,6 +50,7 @@
     <div id="funnel-row" class="grid grid-cols-4 gap-0">
       <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
     </div>
+    <div id="funnel-rates" class="mt-3"></div>
   </div>
   <!-- Latency cards + Outcomes + Companies -->
   <div class="grid grid-cols-2 gap-4 mb-4" id="kpi-row">
@@ -191,20 +192,36 @@ function renderFunnel(f) {
   const connected    = parseInt(f.connected)    || 0;
   const navigated    = parseInt(f.navigated)    || 0;
   const humanReached = parseInt(f.human_reached) || 0;
+  const navigable    = parseInt(f.navigable)    || 0;
 
   const pct = (n, d) => d ? Math.round(n / d * 100) : 0;
-  const connRate = pct(connected,    initiated);
-  const navRate  = pct(navigated,    connected);
-  const succRate = pct(humanReached, navigated);
-
-  const dropped = (stage, prev, cur, reasons) =>
-    prev - cur > 0 ? `<div class="text-red-400 text-xs mt-1">-${prev - cur} ${reasons}</div>` : '';
+  const connRate   = pct(connected,    initiated);
+  const navRate    = pct(navigated,    connected);
+  const overallRate = pct(humanReached, navigated);
+  const aiRate     = pct(humanReached, navigable);
 
   document.getElementById('funnel-row').innerHTML = `
-    ${funnelStage('📞 Initiated',     initiated,    initiated,   'text-blue-400',    '100%',      '', '')}
-    ${funnelStage('📶 Connected',     connected,    initiated,   connRate >= 80 ? 'text-emerald-400' : 'text-amber-400', connRate + '%', 'of initiated', `-${initiated - connected} busy / no-answer / invalid`)}
-    ${funnelStage('🤖 AI Navigated',  navigated,    connected,   navRate  >= 80 ? 'text-emerald-400' : 'text-amber-400', navRate  + '%', 'of connected', `-${connected - navigated} server_restart / quick-end`)}
-    ${funnelStage('✅ Human Reached', humanReached, navigated,   succRate >= 50 ? 'text-emerald-400' : succRate >= 25 ? 'text-amber-400' : 'text-red-400', succRate + '%', 'of navigated', `-${navigated - humanReached} no_human_path / outside_hours / etc`)}
+    ${funnelStage('📞 Initiated',     initiated,    initiated,   'text-blue-400',    '100%',       '', '')}
+    ${funnelStage('📶 Connected',     connected,    initiated,   connRate  >= 80 ? 'text-emerald-400' : 'text-amber-400', connRate  + '%', 'of initiated',  `-${initiated - connected} busy / no-answer / invalid`)}
+    ${funnelStage('🤖 AI Navigated',  navigated,    connected,   navRate   >= 80 ? 'text-emerald-400' : 'text-amber-400', navRate   + '%', 'of connected',  `-${connected - navigated} server_restart / quick-end`)}
+    ${funnelStage('✅ Human Reached', humanReached, navigated,   overallRate >= 50 ? 'text-emerald-400' : overallRate >= 25 ? 'text-amber-400' : 'text-red-400', overallRate + '%', 'of navigated', `-${navigated - humanReached} no_human_path / outside_hours / etc`)}
+  `;
+
+  // Second row: the two success rates explained
+  document.getElementById('funnel-rates').innerHTML = `
+    <div class="flex flex-wrap gap-6 pt-3 border-t border-slate-700 mt-1">
+      <div>
+        <span class="text-slate-500 text-xs">Overall Rate</span>
+        <span class="ml-2 font-bold text-sm ${overallRate >= 50 ? 'text-emerald-400' : overallRate >= 25 ? 'text-amber-400' : 'text-red-400'}">${overallRate}%</span>
+        <span class="text-slate-600 text-xs ml-1">— human_reached ÷ all navigated</span>
+      </div>
+      <div>
+        <span class="text-slate-500 text-xs">AI Performance Rate</span>
+        <span class="ml-2 font-bold text-sm ${aiRate >= 60 ? 'text-emerald-400' : aiRate >= 35 ? 'text-amber-400' : 'text-red-400'}">${aiRate}%</span>
+        <span class="text-slate-600 text-xs ml-1">— human_reached ÷ reachable calls (excl. outside_hours / voicemail / invalid)</span>
+      </div>
+      <div class="text-slate-600 text-xs self-center">Reachable: ${navigable} calls</div>
+    </div>
   `;
 }
 
@@ -679,7 +696,7 @@ function outcomeLabel(outcome) {
 
 function outcomePill(call) {
   const raw = call.ended_reason ?? call.status;
-  const outcome = call.human_reached ? 'human_reached'
+  const outcome = (call.human_reached || raw === 'callback_offered') ? 'human_reached'
                 : raw === 'completed' ? 'no_human_path'
                 : raw;
   const colors = {
