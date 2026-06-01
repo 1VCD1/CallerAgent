@@ -9,11 +9,21 @@ export interface OutcomeConfig {
 
 export function getOutcomeConfig(call: {
   human_reached?: boolean;
+  user_confirmed?: boolean | null;
   status: string;
   ended_reason?: string;
 }): OutcomeConfig {
-  if (call.human_reached) return {
-    label: 'Human reached', color: '#25D366',
+  // User explicitly rejected AI's human detection
+  if (call.human_reached && call.user_confirmed === false) return {
+    label: 'AI mistake', color: '#f97316',
+    bg: 'rgba(249,115,22,0.10)', border: 'rgba(249,115,22,0.28)',
+    icon: 'warning-outline',
+    actionHint: 'The AI mistook an automated system for a human. Your feedback has been recorded to improve future calls.',
+  };
+  // User confirmed or AI correctly detected human
+  if (call.human_reached && call.user_confirmed !== false) return {
+    label: call.user_confirmed === true ? 'Human reached ✓' : 'Human reached',
+    color: '#25D366',
     bg: 'rgba(37,211,102,0.12)', border: 'rgba(37,211,102,0.25)',
   };
   if (call.status === 'FAILED') return {

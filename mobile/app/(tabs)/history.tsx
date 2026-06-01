@@ -164,7 +164,7 @@ export default function HistoryScreen() {
                 ) : (
                   <View style={[s.outcomePill, { backgroundColor: outcome.bg, borderColor: outcome.border }]}>
                     {outcome.icon && <Ionicons name={outcome.icon as any} size={11} color={outcome.color} />}
-                    {item.human_reached && <Ionicons name="checkmark-circle" size={11} color={outcome.color} />}
+                    {item.human_reached && item.user_confirmed !== false && <Ionicons name="checkmark-circle" size={11} color={outcome.color} />}
                     <Text style={[s.outcomePillTxt, { color: outcome.color }]}>{outcome.label}</Text>
                   </View>
                 )}
