@@ -152,8 +152,10 @@ function extractDtmfFingerprint(text: string): string | null {
     one:'1', two:'2', three:'3', four:'4', five:'5',
     six:'6', seven:'7', eight:'8', nine:'9', zero:'0',
   };
+  // Note: input is already normalizeIvr'd — punctuation replaced with spaces.
+  // Use \s{2,} (double space from comma→space) or \s+(?:press|or|and) as delimiters.
   const matches = [...text.matchAll(
-    /press\s+(\d|one|two|three|four|five|six|seven|eight|nine|zero)\s+(?:for\s+)?([a-z][a-z\s]{2,25}?)(?=[,.]|\s+(?:press|or|and)|$)/gi
+    /press\s+(\d|one|two|three|four|five|six|seven|eight|nine|zero)\s+(?:for\s+)?([a-z][a-z\s]{2,25}?)(?=\s{2,}|\s+(?:press|or|and)|$)/gi
   )];
   if (matches.length < 2) return null;
   const options = matches.map(m => {

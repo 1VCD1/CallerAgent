@@ -80,12 +80,13 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         const gaveNumber = aiLines.some(t => phonePattern.test(t.text));
         const refinedReason = gaveNumber ? 'callback_number_given' : 'callback_caller_id';
         await query(`UPDATE calls SET ended_reason = $1 WHERE id = $2`, [refinedReason, callId]);
+        callRow[0].ended_reason = refinedReason; // sync in-memory so recording uses correct value
         console.log(`[Status] Callback refined to '${refinedReason}' for call ${callId}`);
       }
 
       // Record call outcome and IVR decision tree nodes for learning
       if (callRow[0]) {
-        const endedReason = callRow[0].ended_reason;
+        const endedReason = callRow[0].ended_reason; // now reflects refined reason
         recordCallOutcome({
           callId,
           company: callRow[0].company,
