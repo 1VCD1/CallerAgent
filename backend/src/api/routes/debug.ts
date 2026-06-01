@@ -8,20 +8,22 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
     const [kpis, funnel, guardRails, outcomes, companies] = await Promise.all([
       queryOne<any>(`
         SELECT
+          COUNT(DISTINCT c.id) FILTER (WHERE c.started_at > NOW() - INTERVAL '24 hours') AS calls_24h,
+          ROUND(AVG(c.wait_duration_seconds) FILTER (
+            WHERE c.human_reached AND c.wait_duration_seconds IS NOT NULL
+          )) AS avg_time_to_human_secs,
+          -- Debug-log-dependent metrics: null when no debug data exists
           ROUND(AVG((dl.data->>'latency_ms')::int) FILTER (
             WHERE dl.event_type = 'llm_decision' AND dl.data->>'latency_ms' IS NOT NULL
-          ))                                                                            AS avg_latency_ms,
+          )) AS avg_latency_ms,
           ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (
             ORDER BY (dl.data->>'latency_ms')::int
           ) FILTER (WHERE dl.event_type = 'llm_decision' AND dl.data->>'latency_ms' IS NOT NULL)) AS p95_latency_ms,
           ROUND(
             COUNT(dl.id) FILTER (WHERE dl.event_type = 'llm_decision' AND dl.data->>'decision_source' = 'prefetch')::numeric /
             NULLIF(COUNT(dl.id) FILTER (WHERE dl.event_type = 'llm_decision'), 0) * 100
-          )                                                                            AS prefetch_pct,
-          COUNT(DISTINCT c.id) FILTER (WHERE c.started_at > NOW() - INTERVAL '24 hours') AS calls_24h,
-          ROUND(AVG(c.wait_duration_seconds) FILTER (
-            WHERE c.human_reached AND c.wait_duration_seconds IS NOT NULL
-          ))                                                                            AS avg_time_to_human_secs
+          ) AS prefetch_pct,
+          COUNT(dl.id) FILTER (WHERE dl.event_type = 'llm_decision') AS debug_decision_count
         FROM calls c
         LEFT JOIN call_debug_logs dl ON dl.call_id = c.id
         WHERE c.started_at > NOW() - INTERVAL '7 days'
