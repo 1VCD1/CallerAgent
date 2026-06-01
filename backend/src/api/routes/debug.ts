@@ -10,8 +10,12 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
         SELECT
           COUNT(DISTINCT c.id)                                                          AS total_calls,
           COUNT(DISTINCT c.id) FILTER (WHERE c.human_reached)                          AS successful,
+          -- Only count real navigated calls (exclude server_restart, dial_failed, still-active)
+          COUNT(DISTINCT c.id) FILTER (WHERE c.status IN ('ENDED','FAILED','BRIDGED')
+            AND COALESCE(c.ended_reason,'') NOT IN ('server_restart','dial_failed'))   AS real_calls,
           ROUND(COUNT(DISTINCT c.id) FILTER (WHERE c.human_reached)::numeric /
-            NULLIF(COUNT(DISTINCT c.id), 0) * 100)                                     AS success_pct,
+            NULLIF(COUNT(DISTINCT c.id) FILTER (WHERE c.status IN ('ENDED','FAILED','BRIDGED')
+              AND COALESCE(c.ended_reason,'') NOT IN ('server_restart','dial_failed')), 0) * 100) AS success_pct,
           ROUND(AVG((dl.data->>'latency_ms')::int) FILTER (
             WHERE dl.event_type = 'llm_decision' AND dl.data->>'latency_ms' IS NOT NULL
           ))                                                                            AS avg_latency_ms,
@@ -43,7 +47,8 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
           COUNT(*)                                            AS total,
           COUNT(*) FILTER (WHERE human_reached)              AS successful,
           ROUND(COUNT(*) FILTER (WHERE human_reached)::numeric /
-            NULLIF(COUNT(*), 0) * 100)                       AS success_pct,
+            NULLIF(COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED','BRIDGED')
+              AND COALESCE(ended_reason,'') NOT IN ('server_restart','dial_failed')), 0) * 100) AS success_pct,
           ROUND(AVG(wait_duration_seconds) FILTER (WHERE human_reached)) AS avg_wait_secs
         FROM calls
         WHERE started_at > NOW() - INTERVAL '7 days'

@@ -187,7 +187,7 @@ function renderKpis(k) {
   const prefetchColor = k.prefetch_pct >= 60 ? 'text-emerald-400' : 'text-amber-400';
   document.getElementById('kpi-row').innerHTML = `
     ${kpiCard('Total Calls (7d)', k.total_calls ?? '—', 'text-blue-400', `${k.calls_24h ?? 0} in last 24h`)}
-    ${kpiCard('Success Rate', k.success_pct != null ? k.success_pct + '%' : '—', successColor, `${k.successful ?? 0} of ${k.total_calls ?? 0} calls`)}
+    ${kpiCard('Success Rate', k.success_pct != null ? k.success_pct + '%' : '—', successColor, `${k.successful ?? 0} of ${k.real_calls ?? 0} navigated calls`)}
     ${kpiCard('Avg LLM Latency', k.avg_latency_ms ? k.avg_latency_ms + 'ms' : '—', latencyColor, `p95: ${k.p95_latency_ms ?? '—'}ms`)}
     ${kpiCard('Prefetch Hit Rate', k.prefetch_pct != null ? k.prefetch_pct + '%' : '—', prefetchColor, 'AI decision reuse')}
   `;
