@@ -252,7 +252,6 @@ ${samePhraseWarning}
 ${lowConfWarning}
 ${explorationBlock}
 ${userNoteBlock}
-${ivrNotesBlock}
 ${patternBlock}
 ${ringToneBlock}
 ${audioBlock}
@@ -267,6 +266,7 @@ ${consistencyWarning}
 
 HISTORICAL SUCCESSFUL PATHS:
 ${topMemories || 'No history available — explore freely.'}
+${ivrNotesBlock}
 
 RECENT ACTIONS THIS CALL:
 ${recentActions || 'None yet.'}
