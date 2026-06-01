@@ -527,138 +527,139 @@ function statRow(label, value, color) {
 // ─── Timeline ─────────────────────────────────────────────────────────────────
 function renderTimeline(transcripts, debugEvents) {
   if (!transcripts.length) {
-    document.getElementById('timeline').innerHTML = '<div class="text-slate-500 text-sm">No transcript available</div>';
+    document.getElementById('timeline').innerHTML = '<div class="text-slate-500 text-sm py-8 text-center">No transcript available</div>';
     return;
   }
 
-  const decisions  = [...debugEvents.filter(e => e.event_type === 'llm_decision')]
+  const hasDebug = debugEvents.some(e => e.event_type === 'llm_decision');
+  const decisions = [...debugEvents.filter(e => e.event_type === 'llm_decision')]
     .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-  const detections = [...debugEvents.filter(e => e.event_type === 'human_detection')]
-    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-  // Match AI transcript entries sequentially to llm_decision events
-  let dIdx = 0, detIdx = 0;
+  // Group transcripts into turns: one or more IVR lines → one AI response
+  const turns = [];
+  let ivrBuf = [];
+  let dIdx = 0;
 
-  const html = transcripts.map((t, i) => {
-    let debugData = null, detData = null;
-
-    if (t.speaker === 'AI' && dIdx < decisions.length) {
-      debugData = decisions[dIdx++].data;
-    }
+  for (const t of transcripts) {
     if (t.speaker === 'IVR') {
-      // find nearest human_detection by transcript content
-      const match = detections.findIndex(d =>
-        d.data?.transcript && t.text.toLowerCase().includes((d.data.transcript ?? '').toLowerCase().slice(0, 20))
-      );
-      if (match >= 0) { detData = detections[match].data; }
+      ivrBuf.push(t);
+    } else if (t.speaker === 'AI') {
+      const debug = dIdx < decisions.length ? decisions[dIdx++].data : null;
+      turns.push({ ivr: ivrBuf, ai: t, debug });
+      ivrBuf = [];
+    } else if (t.speaker === 'HUMAN') {
+      if (ivrBuf.length) { turns.push({ ivr: ivrBuf, ai: null, debug: null }); ivrBuf = []; }
+      turns.push({ ivr: [], ai: t, debug: null, isHuman: true });
     }
+  }
+  if (ivrBuf.length) turns.push({ ivr: ivrBuf, ai: null, debug: null });
 
-    if (t.speaker === 'IVR') return renderIvrEntry(t, detData);
-    if (t.speaker === 'AI')  return renderAiEntry(t, debugData);
-    return renderHumanEntry(t);
-  }).join('');
+  const noDebugBanner = !hasDebug
+    ? `<div class="bg-slate-700/50 border border-slate-600 rounded-lg px-4 py-2 mb-4 text-slate-400 text-xs">
+        ℹ️ No AI decision data for this call — debug logging was added after this call was made. Only transcript is available.
+       </div>`
+    : '';
 
-  document.getElementById('timeline').innerHTML = `<div class="space-y-0">${html}</div>`;
+  const html = turns.map((turn, i) => renderTurn(turn, i + 1)).join('');
+  document.getElementById('timeline').innerHTML = noDebugBanner + `<div class="space-y-3">${html}</div>`;
 }
 
-function renderIvrEntry(t, detection) {
-  const isTruncated = t.text.length < 40 && (t.text.endsWith(',') || /\d,$/.test(t.text) || t.text.endsWith('press'));
-  const truncWarn   = isTruncated ? ' <span class="badge bg-amber-900 text-amber-300 text-xs" title="Possibly truncated by speechTimeout">TRUNC</span>' : '';
-  const detInfo     = detection ? `<div class="flex gap-3 mt-1 text-xs text-slate-500">
-    <span>audio: ${(detection.audio_confidence * 100).toFixed(0)}%</span>
-    <span>keyword: ${((detection.keyword_confidence ?? 0) * 100).toFixed(0)}%</span>
-    <span>→ ${(detection.confidence * 100).toFixed(0)}% human</span>
-    ${detection.non_human_patterns_matched?.length ? `<span class="text-slate-600">IVR pattern: ${detection.non_human_patterns_matched[0].slice(0,30)}</span>` : ''}
-  </div>` : '';
-
-  return `<div class="flex gap-3 py-2 border-b border-slate-700/30">
-    <div class="flex flex-col items-center">
-      <div class="dot bg-slate-500"></div>
-      <div class="flex-1 w-px bg-slate-700 mt-1"></div>
-    </div>
-    <div class="flex-1 pb-1">
-      <div class="flex items-center gap-2 mb-1">
-        <span class="badge bg-slate-700 text-slate-300">IVR</span>
-        <span class="text-slate-500 text-xs">${new Date(t.timestamp).toLocaleTimeString()}</span>
-        ${truncWarn}
-      </div>
-      <div class="text-slate-200 text-sm leading-relaxed">"${t.text}"</div>
-      ${detInfo}
-    </div>
-  </div>`;
-}
-
-function renderAiEntry(t, d) {
-  if (!d) {
-    return `<div class="flex gap-3 py-2 border-b border-slate-700/30">
-      <div class="flex flex-col items-center">
-        <div class="dot bg-blue-500"></div>
-        <div class="flex-1 w-px bg-slate-700 mt-1"></div>
-      </div>
-      <div class="flex-1 pb-1">
-        <span class="badge bg-slate-700 text-slate-300">AI</span>
-        <span class="text-slate-400 text-sm ml-2">${t.text}</span>
+function renderTurn(turn, n) {
+  if (turn.isHuman) {
+    return `<div class="border border-emerald-800 rounded-lg overflow-hidden">
+      <div class="bg-emerald-950 px-4 py-3 flex items-center gap-2">
+        <span class="badge bg-emerald-800 text-emerald-200">HUMAN</span>
+        <span class="text-emerald-200 text-sm">"${turn.ai.text}"</span>
       </div>
     </div>`;
   }
 
-  const actionColors = { press_key: '#3b82f6', say_phrase: '#a855f7', wait: '#6b7280', end_call: '#ef4444', escalate_to_user: '#f59e0b', retry: '#94a3b8' };
-  const color = actionColors[d.action] ?? '#6b7280';
-  const confPct = Math.round((d.confidence ?? 0) * 100);
-  const hconfPct = Math.round((d.human_confidence ?? 0) * 100);
-  const confColor = confPct >= 70 ? '#10b981' : confPct >= 45 ? '#f59e0b' : '#ef4444';
+  const actionColors = { press_key:'#3b82f6', say_phrase:'#a855f7', wait:'#6b7280', end_call:'#ef4444', escalate_to_user:'#f59e0b', retry:'#94a3b8' };
+  const d = turn.debug;
+  const color = d ? (actionColors[d.action] ?? '#6b7280') : '#475569';
 
-  const warnings = [];
-  if (d.consecutive_same_phrase?.count >= 2) warnings.push(`<span class="badge bg-red-900 text-red-300">LOOP×${d.consecutive_same_phrase.count}</span>`);
-  if (d.consecutive_same_key?.count >= 2)    warnings.push(`<span class="badge bg-red-900 text-red-300">DTMF×${d.consecutive_same_key.count}</span>`);
-  if (d.downgraded)                          warnings.push(`<span class="badge bg-amber-900 text-amber-300">DNGRD</span>`);
-  if ((d.low_conf_counter_new ?? 0) >= 2)    warnings.push(`<span class="badge bg-amber-900 text-amber-300">LOW♻${d.low_conf_counter_new}</span>`);
-  if (d.transfer_pending)                    warnings.push(`<span class="badge bg-blue-900 text-blue-300">XFER</span>`);
+  // IVR section
+  const ivrLines = turn.ivr.map(t => {
+    const trunc = t.text.length < 40 && (t.text.endsWith(',') || /\d,$/.test(t.text) || t.text.endsWith('press'));
+    return `<div class="text-slate-200 text-sm leading-relaxed">"${t.text}"${trunc ? ' <span class="badge bg-amber-900 text-amber-300 ml-1" title="Possibly truncated by speechTimeout">TRUNC?</span>' : ''}</div>`;
+  }).join('');
 
-  const prefetchBadge = d.decision_source === 'prefetch'
-    ? '<span class="badge bg-emerald-900 text-emerald-300 text-xs">pre-fetched</span>'
+  const menuKeys = d?.available_menu_keys?.length
+    ? `<div class="mt-1.5 flex items-center gap-1.5 flex-wrap">
+        <span class="text-slate-500 text-xs">Valid keys:</span>
+        ${d.available_menu_keys.map(k => `<span class="badge bg-slate-700 text-slate-300">${k}</span>`).join('')}
+       </div>`
     : '';
 
-  return `<div class="flex gap-3 py-2 border-b border-slate-700/30">
-    <div class="flex flex-col items-center">
-      <div class="dot" style="background:${color}"></div>
-      <div class="flex-1 w-px bg-slate-700 mt-1"></div>
-    </div>
-    <div class="flex-1 pb-1">
-      <div class="flex flex-wrap items-center gap-2 mb-1">
-        <span class="badge text-white font-semibold" style="background:${color}">${d.action}${d.value ? ': ' + d.value : ''}</span>
-        ${d.latency_ms ? `<span class="text-slate-500 text-xs">${d.latency_ms}ms</span>` : ''}
-        ${prefetchBadge}
-        ${warnings.join('')}
-      </div>
-      <div class="flex items-center gap-4 mb-1">
-        <div class="flex items-center gap-1.5">
-          <span class="text-slate-600 text-xs">conf</span>
-          <div class="conf-track w-16"><div class="conf-fill" style="width:${confPct}%;background:${confColor}"></div></div>
-          <span class="text-xs" style="color:${confColor}">${confPct}%</span>
-        </div>
-        ${hconfPct > 5 ? `<div class="flex items-center gap-1.5">
-          <span class="text-slate-600 text-xs">human</span>
-          <div class="conf-track w-16"><div class="conf-fill" style="width:${hconfPct}%;background:#f59e0b"></div></div>
-          <span class="text-amber-400 text-xs">${hconfPct}%</span>
-        </div>` : ''}
-        ${d.audio_confidence != null && d.audio_frames > 10 ? `<span class="text-slate-600 text-xs">audio:${(d.audio_confidence*100).toFixed(0)}%</span>` : ''}
-      </div>
-      <div class="text-slate-400 text-xs italic leading-relaxed">${d.reasoning || ''}</div>
-      ${d.available_menu_keys?.length ? `<div class="text-slate-600 text-xs mt-0.5">menu keys: [${d.available_menu_keys.join(', ')}]</div>` : ''}
-    </div>
-  </div>`;
-}
+  const ivrSection = turn.ivr.length
+    ? `<div class="border-b border-slate-700 px-4 py-3 bg-slate-900/50">
+        <div class="text-slate-500 text-xs font-semibold mb-1.5">IVR</div>
+        ${ivrLines}
+        ${menuKeys}
+       </div>`
+    : '';
 
-function renderHumanEntry(t) {
-  return `<div class="flex gap-3 py-2 border-b border-slate-700/30">
-    <div class="flex flex-col items-center">
-      <div class="dot bg-emerald-400"></div>
+  // AI section
+  let aiSection = '';
+  if (turn.ai) {
+    if (!d) {
+      // No debug data — just show the action text
+      aiSection = `<div class="px-4 py-3">
+        <div class="text-slate-500 text-xs font-semibold mb-1.5">AI</div>
+        <div class="text-slate-400 text-sm">${turn.ai.text}</div>
+        <div class="text-slate-600 text-xs mt-1">No decision data for this call</div>
+      </div>`;
+    } else {
+      const confPct   = Math.round((d.confidence ?? 0) * 100);
+      const hconfPct  = Math.round((d.human_confidence ?? 0) * 100);
+      const confColor = confPct >= 70 ? 'text-emerald-400' : confPct >= 45 ? 'text-amber-400' : 'text-red-400';
+      const confBg    = confPct >= 70 ? '#10b981' : confPct >= 45 ? '#f59e0b' : '#ef4444';
+
+      const warnings = [];
+      if (d.consecutive_same_phrase?.count >= 2) warnings.push(`<span class="badge bg-red-900 text-red-300">🔴 LOOP ×${d.consecutive_same_phrase.count} — "${d.consecutive_same_phrase.phrase}"</span>`);
+      if (d.consecutive_same_key?.count >= 2)    warnings.push(`<span class="badge bg-red-900 text-red-300">🔴 DTMF STUCK ×${d.consecutive_same_key.count}</span>`);
+      if (d.downgraded)                          warnings.push(`<span class="badge bg-amber-900 text-amber-300">⚠ ESCALATION DOWNGRADED (human_conf ${(d.human_confidence*100).toFixed(0)}% &lt; 75%)</span>`);
+      if ((d.low_conf_counter_new ?? 0) >= 2)    warnings.push(`<span class="badge bg-amber-900 text-amber-300">⚠ LOW CONF ×${d.low_conf_counter_new}</span>`);
+      if (d.transfer_pending)                    warnings.push(`<span class="badge bg-blue-900 text-blue-300">↗ TRANSFER PENDING — lowered threshold</span>`);
+
+      const keyMiss = d.action === 'press_key' && d.available_menu_keys?.length && !d.available_menu_keys.includes(String(d.value));
+      if (keyMiss) warnings.push(`<span class="badge bg-red-900 text-red-300">🔴 KEY [${d.value}] NOT IN MENU [${d.available_menu_keys.join(',')}]</span>`);
+
+      aiSection = `<div class="px-4 py-3">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="text-slate-500 text-xs font-semibold">AI →</span>
+          <span class="badge text-white font-bold text-sm" style="background:${color}; padding:3px 10px">
+            ${d.action === 'press_key'  ? `press [${d.value}]`
+            : d.action === 'say_phrase' ? `say "${d.value}"`
+            : d.action === 'wait'       ? `wait ${d.value}s`
+            : d.action === 'end_call'   ? `end call (${d.ended_reason ?? ''})`
+            : d.action}
+          </span>
+          <span class="${confColor} font-semibold text-sm">${confPct}%</span>
+          <div class="conf-track w-20"><div class="conf-fill" style="width:${confPct}%;background:${confBg}"></div></div>
+          ${d.latency_ms ? `<span class="text-slate-500 text-xs ml-1">${d.latency_ms}ms</span>` : ''}
+          ${d.decision_source === 'prefetch' ? '<span class="badge bg-emerald-900 text-emerald-300 text-xs">pre-fetched</span>' : ''}
+          ${hconfPct > 5 ? `<span class="text-amber-400 text-xs ml-1">human: ${hconfPct}%</span>` : ''}
+        </div>
+
+        ${d.reasoning ? `<div class="text-slate-200 text-sm leading-relaxed bg-slate-700/40 rounded-md px-3 py-2 mb-2">${d.reasoning}</div>` : ''}
+
+        ${warnings.length ? `<div class="flex flex-col gap-1 mt-2">${warnings.join('')}</div>` : ''}
+      </div>`;
+    }
+  }
+
+  const turnTime = (turn.ai ?? turn.ivr[0])?.timestamp
+    ? new Date((turn.ai ?? turn.ivr[0]).timestamp).toLocaleTimeString()
+    : '';
+
+  return `<div class="border rounded-lg overflow-hidden" style="border-color:${color}40">
+    <div class="flex items-center justify-between px-4 py-1.5 text-xs" style="background:${color}18">
+      <span class="text-slate-500 font-mono">Turn ${n}</span>
+      <span class="text-slate-600">${turnTime}</span>
     </div>
-    <div class="flex-1">
-      <span class="badge bg-emerald-900 text-emerald-300">HUMAN</span>
-      <span class="text-emerald-200 text-sm ml-2">"${t.text}"</span>
-    </div>
+    ${ivrSection}
+    ${aiSection}
   </div>`;
 }
 
