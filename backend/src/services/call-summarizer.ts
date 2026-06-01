@@ -13,27 +13,35 @@ export async function generateCallSummary(callId: string): Promise<void> {
 
   const { company, goal, status, ended_reason } = callRow[0];
 
-  const transcripts = await query<{ speaker: string; text: string }>(
-    `SELECT speaker, text FROM transcripts WHERE call_id = $1 ORDER BY timestamp ASC`,
-    [callId]
-  );
+  const [transcripts, debugEvents] = await Promise.all([
+    query<{ speaker: string; text: string }>(
+      `SELECT speaker, text FROM transcripts WHERE call_id = $1 ORDER BY timestamp ASC`,
+      [callId]
+    ),
+    query<{ event_type: string; data: Record<string, any> }>(
+      `SELECT event_type, data FROM call_debug_logs WHERE call_id = $1 ORDER BY timestamp ASC`,
+      [callId]
+    ),
+  ]);
+
   if (transcripts.length === 0) return;
 
-  const transcript = transcripts
-    .map(t => `[${t.speaker}] ${t.text}`)
-    .join('\n');
+  const transcript = transcripts.map(t => `[${t.speaker}] ${t.text}`).join('\n');
 
   const outcome = status === 'HUMAN_DETECTED' || status === 'BRIDGED'
     ? 'human_reached'
     : ended_reason ?? 'failed';
 
+  // Build structured failure analysis from debug logs
+  const failureAnalysis = buildFailureAnalysis(debugEvents);
+
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
-    max_tokens: 512,
+    max_tokens: 600,
     messages: [
       {
         role: 'system',
-        content: `You analyze phone call transcripts to extract IVR navigation knowledge. Be concise and factual.`,
+        content: `You analyze phone call transcripts and AI decision data to extract precise, actionable IVR navigation knowledge. Focus on WHY things failed and WHAT to do differently next time. Be specific — quote actual IVR phrases and key sequences.`,
       },
       {
         role: 'user',
@@ -41,17 +49,20 @@ export async function generateCallSummary(callId: string): Promise<void> {
 Goal: ${goal}
 Outcome: ${outcome}
 
-Transcript:
+TRANSCRIPT:
 ${transcript}
 
-Write a concise IVR navigation note (3-6 bullet points) covering:
-- What the IVR asked / menu structure observed
-- What worked (if human was reached)
-- What didn't work (if failed)
-- Any timing info (outside hours, hold times)
-- Best approach for next time
+AI DECISION ANALYSIS (from internal debug logs):
+${failureAnalysis}
 
-Format: plain bullet points starting with "-". No headers.`,
+Write a concise IVR navigation note (4-7 bullet points) covering:
+- Exact IVR menu structure observed (which key leads where)
+- What failed and WHY (based on AI decision analysis — be specific about loops, wrong keys, missed callbacks)
+- What to try differently next time (concrete key sequences or phrases)
+- Any timing/availability info (outside hours, hold music patterns)
+- If human was reached: the exact path that worked
+
+Format: plain bullet points starting with "-". Be specific and actionable. Quote IVR phrases when relevant.`,
       },
     ],
   });
@@ -81,6 +92,86 @@ Format: plain bullet points starting with "-". No headers.`,
   console.log(`[Summarizer] Saved IVR note for ${company} (outcome: ${outcome})`);
 }
 
+function buildFailureAnalysis(debugEvents: { event_type: string; data: Record<string, any> }[]): string {
+  const decisions  = debugEvents.filter(e => e.event_type === 'llm_decision').map(e => e.data);
+  const detections = debugEvents.filter(e => e.event_type === 'human_detection').map(e => e.data);
+  const summary    = debugEvents.find(e => e.event_type === 'call_summary')?.data;
+
+  if (decisions.length === 0) return '(no AI decision data available)';
+
+  const lines: string[] = [];
+
+  // Decision sequence — give LLM a clear picture of what the AI did turn by turn
+  lines.push('DECISION SEQUENCE:');
+  decisions.forEach((d, i) => {
+    const action = d.action === 'press_key'  ? `press [${d.value}]`
+                 : d.action === 'say_phrase' ? `say "${d.value}"`
+                 : d.action === 'wait'       ? `wait ${d.value}s`
+                 : d.action === 'end_call'   ? `end_call (${d.ended_reason ?? 'unknown reason'})`
+                 : d.action;
+    const ivr     = d.ivr_utterance ? `IVR: "${d.ivr_utterance.slice(0, 80)}"` : 'IVR: (silent)';
+    const keys    = d.available_menu_keys?.length ? ` [valid keys: ${d.available_menu_keys.join(',')}]` : '';
+    const conf    = d.confidence != null ? ` conf:${(d.confidence * 100).toFixed(0)}%` : '';
+    lines.push(`  Turn ${i + 1}: ${ivr}${keys} → AI: ${action}${conf} — ${d.reasoning?.slice(0, 100) ?? ''}`);
+  });
+
+  lines.push('');
+  lines.push('FAILURE PATTERNS DETECTED:');
+
+  // Phrase loops
+  const phraseLoops = decisions.filter(d => d.consecutive_same_phrase?.count >= 2);
+  if (phraseLoops.length) {
+    const worst = phraseLoops.reduce((a, b) => a.consecutive_same_phrase.count > b.consecutive_same_phrase.count ? a : b);
+    lines.push(`  ⚠ PHRASE LOOP: AI said "${worst.consecutive_same_phrase.phrase}" ${worst.consecutive_same_phrase.count} times with no result — this phrase does NOT work here`);
+  }
+
+  // DTMF stuck
+  const dtmfStuck = decisions.filter(d => d.consecutive_same_key?.count >= 2);
+  if (dtmfStuck.length) {
+    const worst = dtmfStuck.reduce((a, b) => a.consecutive_same_key.count > b.consecutive_same_key.count ? a : b);
+    lines.push(`  ⚠ DTMF STUCK: AI pressed [${worst.consecutive_same_key.key}] ${worst.consecutive_same_key.count} times — IVR may require voice input here, not DTMF`);
+  }
+
+  // Menu key misses
+  const keyMisses = decisions.filter(d =>
+    d.action === 'press_key' &&
+    d.available_menu_keys?.length > 0 &&
+    !d.available_menu_keys.includes(String(d.value))
+  );
+  if (keyMisses.length) {
+    keyMisses.forEach(d => {
+      lines.push(`  ⚠ WRONG KEY: AI pressed [${d.value}] but valid options were [${d.available_menu_keys.join(', ')}] — navigation went off-track`);
+    });
+  }
+
+  // Escalation downgrades (AI thought it found a human but wasn't confident enough)
+  const downgrades = decisions.filter(d => d.downgraded);
+  if (downgrades.length) {
+    lines.push(`  ⚠ NEAR-MISS ESCALATION: AI attempted to escalate ${downgrades.length} time(s) but was held back (human_confidence below threshold)`);
+  }
+
+  // Near-miss human detection (Deepgram path)
+  const nearMiss = detections.filter(d => d.confidence >= 0.45 && d.confidence < 0.75);
+  if (nearMiss.length) {
+    nearMiss.forEach(d => {
+      lines.push(`  ⚠ POSSIBLE HUMAN MISSED: "${(d.transcript ?? '').slice(0, 80)}" scored ${(d.confidence * 100).toFixed(0)}% human confidence (threshold 75%) — may be a natural-sounding IVR bot`);
+    });
+  }
+
+  // Action breakdown
+  if (summary?.actions_breakdown) {
+    const breakdown = Object.entries(summary.actions_breakdown as Record<string, number>)
+      .map(([a, c]) => `${a}×${c}`).join(', ');
+    lines.push(`  Actions taken: ${breakdown} over ${decisions.length} turns`);
+  }
+
+  if (lines[lines.length - 1] === 'FAILURE PATTERNS DETECTED:') {
+    lines.push('  (no specific failure patterns detected)');
+  }
+
+  return lines.join('\n');
+}
+
 async function consolidateNotes(existing: string, fresh: string, company: string): Promise<string> {
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
@@ -100,12 +191,14 @@ ${existing}
 NEW OBSERVATION (just happened):
 ${fresh}
 
-Synthesize both into an updated knowledge base (5-8 bullet points max).
-- Merge duplicate observations
-- Keep what's still relevant, discard what's superseded
-- Prioritize patterns seen across multiple calls
-- Be specific about what works and what doesn't
-- Note any IVR structure, verification requirements, or timing constraints
+Synthesize into an updated knowledge base (5-8 bullet points max).
+Rules:
+- KEEP specific failure patterns (loops, wrong keys, voice-only menus) — these are critical
+- UPGRADE vague observations to specific ones when the new data is more detailed
+- PRIORITIZE patterns confirmed across multiple calls
+- DISCARD only observations that are clearly superseded or contradicted
+- Be concrete: quote key numbers, IVR phrases, and action sequences
+- End with 1-2 bullets on "best approach for next call"
 
 Format: plain bullet points starting with "-". No headers.`,
       },
