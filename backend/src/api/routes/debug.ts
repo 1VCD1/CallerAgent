@@ -35,23 +35,26 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
             SELECT 1 FROM call_debug_logs dl
             WHERE dl.call_id = calls.id AND dl.event_type = 'llm_decision'
           ))                                                                            AS navigated,
-          -- Stage 4: human reached OR callback secured (both count as success)
-          COUNT(*) FILTER (WHERE human_reached OR ended_reason = 'callback_offered')  AS human_reached,
-          -- AI performance denominator: navigated calls where success was theoretically possible
+          -- Stage 4: human reached OR callback with number given (both count as success)
+          COUNT(*) FILTER (WHERE human_reached
+            OR ended_reason IN ('callback_number_given','callback_offered'))           AS human_reached,
+          -- AI performance denominator: exclude impossible outcomes AND neutral callbacks
           COUNT(*) FILTER (WHERE EXISTS (
             SELECT 1 FROM call_debug_logs dl
             WHERE dl.call_id = calls.id AND dl.event_type = 'llm_decision'
           ) AND COALESCE(ended_reason,'') NOT IN
-            ('outside_hours','voicemail','voicemail_left','invalid_number','busy','no-answer'))
-                                                                                       AS navigable
+            ('outside_hours','voicemail','voicemail_left','invalid_number',
+             'busy','no-answer','callback_caller_id'))                                 AS navigable
         FROM calls
         WHERE started_at > NOW() - INTERVAL '7 days'
       `),
       query<any>(`
         SELECT
           CASE
-            WHEN human_reached              THEN 'human_reached'
-            WHEN ended_reason = 'completed' THEN 'no_human_path'
+            WHEN human_reached                                    THEN 'human_reached'
+            WHEN ended_reason = 'callback_number_given'          THEN 'callback_number_given'
+            WHEN ended_reason = 'callback_caller_id'             THEN 'callback_caller_id'
+            WHEN ended_reason = 'completed'                      THEN 'no_human_path'
             ELSE COALESCE(ended_reason, status)
           END AS outcome,
           COUNT(*) AS count
@@ -63,8 +66,10 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
         SELECT
           company,
           COUNT(*)                                            AS total,
-          COUNT(*) FILTER (WHERE human_reached OR ended_reason = 'callback_offered') AS successful,
-          ROUND(COUNT(*) FILTER (WHERE human_reached OR ended_reason = 'callback_offered')::numeric /
+          COUNT(*) FILTER (WHERE human_reached
+            OR ended_reason IN ('callback_number_given','callback_offered')) AS successful,
+          ROUND(COUNT(*) FILTER (WHERE human_reached
+            OR ended_reason IN ('callback_number_given','callback_offered'))::numeric /
             NULLIF(COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED','BRIDGED')
               AND COALESCE(ended_reason,'') NOT IN ('server_restart','dial_failed')), 0) * 100) AS success_pct,
           ROUND(AVG(wait_duration_seconds) FILTER (WHERE human_reached)) AS avg_wait_secs

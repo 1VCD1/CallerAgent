@@ -64,10 +64,26 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       emitCallStatus(callId, 'ENDED');
       activeOrchestrators.delete(callId);
 
-      // Record call outcome for memory learning (success or failure both matter)
       const callRow = await query<{
-        company: string; goal: string; human_reached: boolean; wait_duration_seconds: number | null;
-      }>(`SELECT company, goal, human_reached, wait_duration_seconds FROM calls WHERE id = $1`, [callId]);
+        company: string; goal: string; human_reached: boolean;
+        wait_duration_seconds: number | null; ended_reason: string | null;
+      }>(`SELECT company, goal, human_reached, wait_duration_seconds, ended_reason FROM calls WHERE id = $1`, [callId]);
+
+      // Refine callback_offered into specific sub-reasons
+      if (callRow[0]?.ended_reason === 'callback_offered') {
+        const aiLines = await query<{ text: string }>(
+          `SELECT text FROM transcripts WHERE call_id = $1 AND speaker = 'AI' ORDER BY timestamp`,
+          [callId]
+        );
+        // Detect if AI said a phone number (7+ digit sequence, possibly spaced)
+        const phonePattern = /(\d[\s\-]?){7,}\d/;
+        const gaveNumber = aiLines.some(t => phonePattern.test(t.text));
+        const refinedReason = gaveNumber ? 'callback_number_given' : 'callback_caller_id';
+        await query(`UPDATE calls SET ended_reason = $1 WHERE id = $2`, [refinedReason, callId]);
+        console.log(`[Status] Callback refined to '${refinedReason}' for call ${callId}`);
+      }
+
+      // Record call outcome for memory learning (success or failure both matter)
       if (callRow[0]) {
         recordCallOutcome({
           callId,
