@@ -55,15 +55,19 @@ export default function HistoryScreen() {
 
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
+  // user_confirmed overrides human_reached when set
+  const isSuccess = (c: typeof callHistory[0]) =>
+    c.user_confirmed !== null && c.user_confirmed !== undefined ? c.user_confirmed : c.human_reached;
+
   const filtered = callHistory.filter(c => {
-    if (filter === 'success') return c.human_reached;
-    if (filter === 'failed')  return !c.human_reached && !ACTIVE_STATUSES.includes(c.status) && !NON_FAILURE_REASONS.has(c.ended_reason ?? '');
+    if (filter === 'success') return isSuccess(c);
+    if (filter === 'failed')  return !isSuccess(c) && !ACTIVE_STATUSES.includes(c.status) && !NON_FAILURE_REASONS.has(c.ended_reason ?? '');
     return true;
   });
 
-  // Stats — success rate excludes non-failure reasons (closed, voicemail, etc.)
+  // Stats — success rate uses user_confirmed when available
   const total         = callHistory.length;
-  const humanReach    = callHistory.filter(c => c.human_reached);
+  const humanReach    = callHistory.filter(c => isSuccess(c));
   const countableBase = callHistory.filter(c => !ACTIVE_STATUSES.includes(c.status) && !NON_FAILURE_REASONS.has(c.ended_reason ?? ''));
   const waits         = humanReach.map(c => c.wait_duration_seconds).filter((w): w is number => w != null);
   const avgWait       = waits.length ? Math.round(waits.reduce((a, b) => a + b, 0) / waits.length) : null;
@@ -138,7 +142,9 @@ export default function HistoryScreen() {
           const cfg      = STATUS[item.status] ?? STATUS['ENDED'];
           const isActive = ACTIVE_STATUSES.includes(item.status);
           const outcome  = getOutcomeConfig(item);
-          const accentColor = item.human_reached ? colors.green
+          const confirmed = isSuccess(item);
+          const accentColor = confirmed ? colors.green
+                            : item.user_confirmed === false ? colors.red
                             : item.status === 'FAILED' ? colors.red
                             : isActive ? cfg.color
                             : outcome.color === '#64748b' ? colors.border : outcome.color;

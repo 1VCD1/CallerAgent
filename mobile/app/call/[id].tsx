@@ -7,7 +7,7 @@ import { Audio } from 'expo-av';
 import { useTranslation } from 'react-i18next';
 import { colors, STATUS } from '@/theme';
 import { translateGoal } from '@/i18n';
-import { getCall, getApiUrl, getCompanyNote, saveCompanyNote } from '@/api';
+import { getCall, getApiUrl, getCompanyNote, saveCompanyNote, submitCallFeedback } from '@/api';
 import { getOutcomeConfig } from '@/outcome';
 import type { Call, Transcript } from '@/api';
 
@@ -40,6 +40,8 @@ export default function CallDetailScreen() {
   const [duration, setDuration] = useState(0);   // ms
   const [playbackDone, setPlaybackDone] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
+  const [userConfirmed, setUserConfirmed] = useState<boolean | null | undefined>(undefined);
+  const [feedbackSaving, setFeedbackSaving] = useState(false);
   const [note, setNote] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteSaved, setNoteSaved] = useState(false);
@@ -81,6 +83,7 @@ export default function CallDetailScreen() {
   useEffect(() => {
     getCall(id).then(c => {
       setCall(c);
+      setUserConfirmed(c.user_confirmed ?? null);
       if (c.ended_at) {
         getCompanyNote(c.company).then(n => setNote(n ?? '')).catch(() => {});
         // Use call duration as fallback for recording duration
@@ -103,6 +106,15 @@ export default function CallDetailScreen() {
       setNoteSaved(true);
       setTimeout(() => setNoteSaved(false), 2000);
     } catch {} finally { setNoteSaving(false); }
+  };
+
+  const submitFeedback = async (confirmed: boolean) => {
+    if (!call) return;
+    setFeedbackSaving(true);
+    try {
+      await submitCallFeedback(call.id, confirmed);
+      setUserConfirmed(confirmed);
+    } catch {} finally { setFeedbackSaving(false); }
   };
 
   async function togglePlayback() {
@@ -267,6 +279,45 @@ export default function CallDetailScreen() {
           )}
         </View>
 
+        {/* Feedback card — shown when AI detected human, user can confirm or reject */}
+        {isTerminal && call.human_reached && (
+          <View style={s.feedbackCard}>
+            <Text style={s.feedbackTitle}>{t('feedback_title')}</Text>
+            <Text style={s.feedbackHint}>{t('feedback_hint')}</Text>
+            {userConfirmed === null || userConfirmed === undefined ? (
+              <View style={s.feedbackBtns}>
+                <TouchableOpacity
+                  style={[s.feedbackBtn, s.feedbackBtnYes]}
+                  onPress={() => submitFeedback(true)}
+                  disabled={feedbackSaving}
+                >
+                  <Ionicons name="checkmark-circle-outline" size={16} color={colors.green} />
+                  <Text style={[s.feedbackBtnTxt, { color: colors.green }]}>{t('feedback_yes')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.feedbackBtn, s.feedbackBtnNo]}
+                  onPress={() => submitFeedback(false)}
+                  disabled={feedbackSaving}
+                >
+                  <Ionicons name="close-circle-outline" size={16} color={colors.red} />
+                  <Text style={[s.feedbackBtnTxt, { color: colors.red }]}>{t('feedback_no')}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={[s.feedbackResult, { borderColor: userConfirmed ? colors.green : colors.red }]}>
+                <Ionicons
+                  name={userConfirmed ? 'checkmark-circle' : 'close-circle'}
+                  size={16}
+                  color={userConfirmed ? colors.green : colors.red}
+                />
+                <Text style={[s.feedbackResultTxt, { color: userConfirmed ? colors.green : colors.red }]}>
+                  {userConfirmed ? t('feedback_confirmed') : t('feedback_rejected')}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Tip for next call — only shown on completed calls */}
         {isTerminal && (
           <View style={s.noteCard}>
@@ -370,6 +421,17 @@ const s = StyleSheet.create({
   statCell:   { flex: 1, minWidth: '45%', backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12 },
   statLabel:  { fontSize: 10, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
   statValue:  { fontSize: 15, fontWeight: '700', color: colors.text },
+
+  feedbackCard:      { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 16 },
+  feedbackTitle:     { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1, marginBottom: 6 },
+  feedbackHint:      { fontSize: 12, color: colors.muted, lineHeight: 17, marginBottom: 14 },
+  feedbackBtns:      { flexDirection: 'row', gap: 10 },
+  feedbackBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 12, borderWidth: 1 },
+  feedbackBtnYes:    { borderColor: colors.green, backgroundColor: 'rgba(37,211,102,0.08)' },
+  feedbackBtnNo:     { borderColor: colors.red,   backgroundColor: 'rgba(239,68,68,0.08)' },
+  feedbackBtnTxt:    { fontSize: 13, fontWeight: '600' },
+  feedbackResult:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, backgroundColor: 'rgba(255,255,255,0.03)' },
+  feedbackResultTxt: { fontSize: 13, fontWeight: '600' },
 
   noteCard:        { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 16 },
   noteTitle:       { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1, marginBottom: 6 },

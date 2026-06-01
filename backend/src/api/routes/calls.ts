@@ -260,6 +260,19 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
     return { success: true, callId: id };
   });
 
+  // PATCH /calls/:id/feedback — user confirms or rejects human detection result
+  fastify.patch<{ Params: { id: string }; Body: { confirmed: boolean } }>(
+    '/calls/:id/feedback',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const { id } = request.params;
+      const { confirmed } = request.body as { confirmed: boolean };
+      if (typeof confirmed !== 'boolean') return reply.status(400).send({ error: 'confirmed must be boolean' });
+      await query(`UPDATE calls SET user_confirmed = $1 WHERE id = $2`, [confirmed, id]);
+      return { ok: true };
+    }
+  );
+
   // DELETE /calls/:id — end a call
   fastify.delete<{ Params: { id: string } }>('/calls/:id', { preHandler: requireApiKey }, async (request, reply) => {
     const { id } = request.params;
@@ -378,8 +391,12 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
       const row = await queryOne<{ total: string; successful: string; avg_wait_secs: string | null }>(
         `SELECT
            COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED')) AS total,
-           COUNT(*) FILTER (WHERE human_reached = true) AS successful,
-           ROUND(AVG(wait_duration_seconds) FILTER (WHERE human_reached = true)::numeric)::integer AS avg_wait_secs
+           COUNT(*) FILTER (WHERE
+             CASE WHEN user_confirmed IS NOT NULL THEN user_confirmed ELSE human_reached END = true
+           ) AS successful,
+           ROUND(AVG(wait_duration_seconds) FILTER (WHERE
+             CASE WHEN user_confirmed IS NOT NULL THEN user_confirmed ELSE human_reached END = true
+           )::numeric)::integer AS avg_wait_secs
          FROM calls
          WHERE user_id = $1 AND (
            LOWER(company) = LOWER($2)

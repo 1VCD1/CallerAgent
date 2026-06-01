@@ -116,6 +116,14 @@ const zhTW = {
   recording_tap: '點擊播放',
   human_confidence: '真人信心度 {{pct}}%',
 
+  // Feedback
+  feedback_title: '這真的是真人嗎？',
+  feedback_hint: '你的意見會覆蓋 AI 的判定，並提升準確率。',
+  feedback_yes: '是的，是真人',
+  feedback_no: '不，AI 判斷錯了',
+  feedback_confirmed: '已確認是真人 ✓',
+  feedback_rejected: '已標記為 AI 誤判',
+
   // Errors
   error: '錯誤',
   save_failed: '儲存失敗',

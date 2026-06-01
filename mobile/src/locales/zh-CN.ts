@@ -116,6 +116,14 @@ const zhCN = {
   recording_tap: '点击播放',
   human_confidence: '真人置信度 {{pct}}%',
 
+  // Feedback
+  feedback_title: '这真的是真人吗？',
+  feedback_hint: '你的意见会覆盖 AI 的判定，并提升准确率。',
+  feedback_yes: '是的，是真人',
+  feedback_no: '不，AI 判断错了',
+  feedback_confirmed: '已确认是真人 ✓',
+  feedback_rejected: '已标记为 AI 误判',
+
   // Errors
   error: '错误',
   save_failed: '保存失败',

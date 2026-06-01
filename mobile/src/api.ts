@@ -29,6 +29,7 @@ export interface Call {
   ended_at?: string;
   human_reached: boolean;
   human_confidence?: number;
+  user_confirmed?: boolean | null;
   wait_duration_seconds?: number;
   recording_url?: string;
   ended_reason?: string;
@@ -227,6 +228,15 @@ export interface IvrNote {
   summary: string;
   outcome: string;
   updated_at: string;
+}
+
+export async function submitCallFeedback(callId: string, confirmed: boolean): Promise<void> {
+  const url = await getApiUrl();
+  await fetch(`${url}/calls/${callId}/feedback`, {
+    method: 'PATCH',
+    headers: await getHeaders(),
+    body: JSON.stringify({ confirmed }),
+  });
 }
 
 export async function getIvrNotes(company: string): Promise<IvrNote | null> {

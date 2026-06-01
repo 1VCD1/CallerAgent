@@ -116,6 +116,14 @@ const en = {
   recording_tap: 'Tap to play',
   human_confidence: '{{pct}}% human confidence',
 
+  // Feedback
+  feedback_title: 'WAS THIS A REAL HUMAN?',
+  feedback_hint: 'Your feedback overrides the AI result and improves accuracy.',
+  feedback_yes: 'Yes, it was',
+  feedback_no: 'No, AI mistake',
+  feedback_confirmed: 'Confirmed human ✓',
+  feedback_rejected: 'Marked as AI mistake',
+
   // Errors
   error: 'Error',
   save_failed: 'Save failed',
