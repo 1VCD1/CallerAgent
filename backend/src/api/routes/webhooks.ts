@@ -3,7 +3,7 @@ import * as https from 'https';
 import twilio from 'twilio';
 import { activeOrchestrators } from './calls';
 import { query, queryOne } from '../../db/client';
-import { getMemoryPatterns, getActionPatterns, recordCallOutcome } from '../../services/memory';
+import { getMemoryPatterns, getIvrDecisionTree, recordCallOutcome, recordIvrDecisionNodes } from '../../services/memory';
 import { decideLLMAction } from '../../services/llm-engine';
 import { config } from '../../config';
 import { CallContext, ActionRecord, CallStatus } from '../../types';
@@ -83,8 +83,9 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         console.log(`[Status] Callback refined to '${refinedReason}' for call ${callId}`);
       }
 
-      // Record call outcome for memory learning (success or failure both matter)
+      // Record call outcome and IVR decision tree nodes for learning
       if (callRow[0]) {
+        const endedReason = callRow[0].ended_reason;
         recordCallOutcome({
           callId,
           company: callRow[0].company,
@@ -92,6 +93,13 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
           humanReached: callRow[0].human_reached,
           waitDurationSeconds: callRow[0].wait_duration_seconds ?? undefined,
         }).catch(err => console.error(`[Status] recordCallOutcome failed for ${callId}:`, err));
+
+        recordIvrDecisionNodes({
+          callId,
+          company: callRow[0].company,
+          humanReached: callRow[0].human_reached,
+          endedReason,
+        }).catch(err => console.error(`[Status] recordIvrDecisionNodes failed for ${callId}:`, err));
       }
 
       // Fire post-call summary in background
@@ -241,7 +249,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
     else userCompanyNote = noteCached;
 
     // Action patterns fetched fresh each turn (cheap aggregate query, changes across calls)
-    const actionPatterns = await getActionPatterns(company);
+    const ivrDecisionTree = await getIvrDecisionTree(company);
 
     if (fetchPromises.length > 0) await Promise.all(fetchPromises);
     companyIvrNotes = companyIvrNotes! ?? ivrNotesCached ?? null;
@@ -383,7 +391,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       consecutiveSameKey,
       consecutiveSamePhrase,
       audioAnalysis: orchestrator?.getAudioAnalysis() ?? null,
-      actionPatterns: actionPatterns.length > 0 ? actionPatterns : undefined,
+      ivrDecisionTree: ivrDecisionTree.length > 0 ? ivrDecisionTree : undefined,
       consecutiveLowConfidence: lowConf > 0 ? lowConf : undefined,
     };
 

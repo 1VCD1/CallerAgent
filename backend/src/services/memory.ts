@@ -126,44 +126,80 @@ export async function recordCallOutcome(params: {
   }
 }
 
-export interface ActionPattern {
+export interface IvrDecisionNode {
+  ivrText: string;
   action: string;
-  value: string | null;
-  total: number;
+  value: string;
+  callsSuccess: number;
+  callsTotal: number;
   successPct: number;
 }
 
-export async function getActionPatterns(company: string): Promise<ActionPattern[]> {
-  // success_pct = % of CALLS where this action was used that ultimately reached a human
-  // (call-level, not action-level — action_history.success only reflects API execution, not IVR outcome)
+function normalizeIvr(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+}
+
+export async function recordIvrDecisionNodes(params: {
+  callId: string;
+  company: string;
+  humanReached: boolean;
+  endedReason: string | null;
+}): Promise<void> {
+  const decisions = await query<{ data: Record<string, any> }>(
+    `SELECT data FROM call_debug_logs WHERE call_id = $1 AND event_type = 'llm_decision' ORDER BY timestamp`,
+    [params.callId]
+  );
+  if (decisions.length === 0) return;
+
+  const success = params.humanReached ||
+    ['callback_number_given', 'callback_offered'].includes(params.endedReason ?? '');
+  const successDelta = success ? 1 : 0;
+
+  for (const { data } of decisions) {
+    if (!data.ivr_utterance || !data.action) continue;
+    const ivrKey = normalizeIvr(data.ivr_utterance);
+    const aiValue = data.value ?? '';
+
+    await query(
+      `INSERT INTO ivr_decision_nodes
+         (company, ivr_text, ai_action, ai_value, calls_success, calls_total)
+       VALUES ($1, $2, $3, $4, $5, 1)
+       ON CONFLICT (company, ivr_text, ai_action, ai_value)
+       DO UPDATE SET
+         calls_success = ivr_decision_nodes.calls_success + $5,
+         calls_total   = ivr_decision_nodes.calls_total   + 1,
+         last_seen_at  = NOW()`,
+      [params.company, ivrKey, data.action, aiValue, successDelta]
+    );
+  }
+}
+
+export async function getIvrDecisionTree(company: string): Promise<IvrDecisionNode[]> {
   const rows = await query<{
-    action: string; value: string | null;
-    total: string; success_pct: string;
+    ivr_text: string; ai_action: string; ai_value: string;
+    calls_success: string; calls_total: string; success_pct: string;
   }>(
-    `SELECT ah.action, ah.value,
-            COUNT(DISTINCT ah.call_id) AS total,
-            ROUND(
-              COUNT(DISTINCT ah.call_id) FILTER (
-                WHERE c.human_reached
-                   OR c.ended_reason IN ('callback_number_given', 'callback_offered')
-              )::numeric / COUNT(DISTINCT ah.call_id) * 100
-            ) AS success_pct
-     FROM action_history ah
-     JOIN calls c ON c.id = ah.call_id
-     WHERE LOWER(c.company) = LOWER($1)
-       AND c.status IN ('ENDED', 'FAILED', 'BRIDGED')
-     GROUP BY ah.action, ah.value
-     HAVING COUNT(DISTINCT ah.call_id) >= 2
-     ORDER BY total DESC
-     LIMIT 15`,
+    `SELECT ivr_text, ai_action, ai_value, calls_success, calls_total,
+            ROUND(calls_success::numeric / calls_total * 100) AS success_pct
+     FROM ivr_decision_nodes
+     WHERE LOWER(company) = LOWER($1) AND calls_total >= 2
+     ORDER BY calls_total DESC, ivr_text, success_pct DESC
+     LIMIT 30`,
     [company]
   );
 
   return rows.map(r => ({
-    action: r.action,
-    value: r.value,
-    total: parseInt(r.total, 10),
-    successPct: parseInt(r.success_pct, 10),
+    ivrText:      r.ivr_text,
+    action:       r.ai_action,
+    value:        r.ai_value,
+    callsSuccess: parseInt(r.calls_success, 10),
+    callsTotal:   parseInt(r.calls_total,   10),
+    successPct:   parseInt(r.success_pct,   10),
   }));
 }
 

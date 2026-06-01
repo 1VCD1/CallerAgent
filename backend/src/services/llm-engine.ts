@@ -194,14 +194,28 @@ Conversational phrasing ("Of course", "I can help with that", "What's your quest
     ? `\n💬 USER TIP FOR ${ctx.company.toUpperCase()}:\n"${ctx.userCompanyNote}"\n← Follow this hint — the user learned it from a previous call.`
     : '';
 
-  const patternBlock = ctx.actionPatterns && ctx.actionPatterns.length > 0
+  const patternBlock = ctx.ivrDecisionTree && ctx.ivrDecisionTree.length > 0
     ? (() => {
-        const bad  = ctx.actionPatterns!.filter(p => p.successPct < 40 && p.total >= 3);
-        const good = ctx.actionPatterns!.filter(p => p.successPct >= 70 && p.total >= 3);
+        // Group nodes by IVR utterance to build a readable decision tree
+        const byIvr = new Map<string, typeof ctx.ivrDecisionTree>();
+        for (const node of ctx.ivrDecisionTree!) {
+          if (!byIvr.has(node.ivrText)) byIvr.set(node.ivrText, []);
+          byIvr.get(node.ivrText)!.push(node);
+        }
         const lines: string[] = [];
-        if (good.length > 0) lines.push(`  ✅ Works well: ${good.map(p => `${p.action}(${p.value ?? ''}) ${p.successPct}% of ${p.total}`).join(' | ')}`);
-        if (bad.length > 0)  lines.push(`  ❌ Avoid: ${bad.map(p => `${p.action}(${p.value ?? ''}) only ${p.successPct}% of ${p.total}`).join(' | ')}`);
-        return lines.length > 0 ? `\n📊 ACTION PATTERNS FOR ${ctx.company.toUpperCase()} (across all past calls):\n${lines.join('\n')}` : '';
+        for (const [ivrText, nodes] of byIvr) {
+          lines.push(`  IVR: "${ivrText.slice(0, 80)}${ivrText.length > 80 ? '...' : ''}"`);
+          for (const n of nodes) {
+            const action = n.action === 'press_key'  ? `press [${n.value}]`
+                         : n.action === 'say_phrase' ? `say "${n.value}"`
+                         : n.action === 'wait'       ? `wait ${n.value}s`
+                         : n.action;
+            const icon   = n.successPct >= 60 ? '✅' : n.successPct >= 30 ? '⚠️' : '❌';
+            const avoid  = n.successPct < 30 && n.callsTotal >= 3 ? ' — AVOID' : '';
+            lines.push(`    → ${action}: ${icon} ${n.successPct}% (${n.callsSuccess}/${n.callsTotal} calls)${avoid}`);
+          }
+        }
+        return `\n📊 IVR DECISION TREE FOR ${ctx.company.toUpperCase()} (learned from past calls):\n${lines.join('\n')}`;
       })()
     : '';
 

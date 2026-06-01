@@ -57,7 +57,7 @@ export interface CallContext {
   consecutiveSameKey?: { key: string; count: number };
   consecutiveSamePhrase?: { phrase: string; count: number };
   consecutiveLowConfidence?: number;  // how many consecutive turns the LLM had confidence < 0.45
-  actionPatterns?: Array<{ action: string; value: string | null; total: number; successPct: number }>;
+  ivrDecisionTree?: Array<{ ivrText: string; action: string; value: string; callsSuccess: number; callsTotal: number; successPct: number }>;
   audioAnalysis?: {
     isHuman: boolean;
     confidence: number;

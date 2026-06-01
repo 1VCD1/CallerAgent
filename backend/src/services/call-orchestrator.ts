@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { CallStateMachine } from '../state-machine/CallStateMachine';
 import { DeepgramTranscriptionSession } from './transcription';
 import { decideLLMAction } from './llm-engine';
-import { getMemoryPatterns, recordCallOutcome, markActionSuccess, getActionPatterns } from './memory';
+import { getMemoryPatterns, recordCallOutcome, markActionSuccess, getIvrDecisionTree, recordIvrDecisionNodes } from './memory';
 import { emitCallStatus } from './call-events';
 import { generateCallSummary } from './call-summarizer';
 import { initiateOutboundCall, sendDTMF, sayPhrase, createConferenceBridge, createConferenceWithHold, bridgeUserToConference, endCall } from './telephony';
@@ -134,7 +134,7 @@ export class CallOrchestrator {
   private cachedIvrNotes: string | null | undefined = undefined;    // undefined = not loaded yet
   private cachedCompanyNote: string | null | undefined = undefined; // undefined = not loaded yet
   private cachedUserRow: { name?: string; birthday?: string; language?: string } | null = null;
-  private cachedActionPatterns: import('./memory').ActionPattern[] | null = null;
+  private cachedDecisionTree: import('./memory').IvrDecisionNode[] | null = null;
   // Updated by the Gather webhook after each turn so prefetch has real previousActions
   private cachedRecentActions: ActionRecord[] = [];
 
@@ -202,9 +202,9 @@ export class CallOrchestrator {
       ? Promise.resolve(this.cachedMemories)
       : getMemoryPatterns(this.call.company, this.call.goal).then(m => { this.cachedMemories = m; return m; });
 
-    const patternsPromise = this.cachedActionPatterns
-      ? Promise.resolve(this.cachedActionPatterns)
-      : getActionPatterns(this.call.company).then(p => { this.cachedActionPatterns = p; return p; });
+    const patternsPromise = this.cachedDecisionTree
+      ? Promise.resolve(this.cachedDecisionTree)
+      : getIvrDecisionTree(this.call.company).then(p => { this.cachedDecisionTree = p; return p; });
 
     this.pendingDecision = Promise.all([memoriesPromise, patternsPromise])
       .then(([memories, patterns]) => {
@@ -225,7 +225,7 @@ export class CallOrchestrator {
           speakerChanged: this.speakerChanged,
           companyIvrNotes: this.cachedIvrNotes ?? undefined,
           availableMenuKeys: extractMenuKeys(triggerText),
-          actionPatterns: patterns.length > 0 ? patterns : undefined,
+          ivrDecisionTree: patterns.length > 0 ? patterns : undefined,
         };
         return decideLLMAction(context);
       })
