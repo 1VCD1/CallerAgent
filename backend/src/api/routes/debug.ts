@@ -50,8 +50,8 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
       query<any>(`
         SELECT
           CASE
-            WHEN human_reached OR ended_reason = 'callback_offered' THEN 'human_reached'
-            WHEN ended_reason = 'completed'                         THEN 'no_human_path'
+            WHEN human_reached              THEN 'human_reached'
+            WHEN ended_reason = 'completed' THEN 'no_human_path'
             ELSE COALESCE(ended_reason, status)
           END AS outcome,
           COUNT(*) AS count
