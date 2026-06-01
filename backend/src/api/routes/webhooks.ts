@@ -3,7 +3,7 @@ import * as https from 'https';
 import twilio from 'twilio';
 import { activeOrchestrators } from './calls';
 import { query, queryOne } from '../../db/client';
-import { getMemoryPatterns, getActionPatterns } from '../../services/memory';
+import { getMemoryPatterns, getActionPatterns, recordCallOutcome } from '../../services/memory';
 import { decideLLMAction } from '../../services/llm-engine';
 import { config } from '../../config';
 import { CallContext, ActionRecord, CallStatus } from '../../types';
@@ -63,6 +63,21 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       );
       emitCallStatus(callId, 'ENDED');
       activeOrchestrators.delete(callId);
+
+      // Record call outcome for memory learning (success or failure both matter)
+      const callRow = await query<{
+        company: string; goal: string; human_reached: boolean; wait_duration_seconds: number | null;
+      }>(`SELECT company, goal, human_reached, wait_duration_seconds FROM calls WHERE id = $1`, [callId]);
+      if (callRow[0]) {
+        recordCallOutcome({
+          callId,
+          company: callRow[0].company,
+          goal: callRow[0].goal,
+          humanReached: callRow[0].human_reached,
+          waitDurationSeconds: callRow[0].wait_duration_seconds ?? undefined,
+        }).catch(err => console.error(`[Status] recordCallOutcome failed for ${callId}:`, err));
+      }
+
       // Fire post-call summary in background
       generateCallSummary(callId).catch(console.error);
     } else {
