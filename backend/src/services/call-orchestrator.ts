@@ -293,6 +293,12 @@ export class CallOrchestrator {
 
         case 'end_call':
           await endCall(callSid);
+          if (action.endedReason) {
+            await query(
+              `UPDATE calls SET ended_reason = $1 WHERE id = $2`,
+              [action.endedReason, this.call.id]
+            );
+          }
           await this.stateMachine.transition('end_call');
           return;
 

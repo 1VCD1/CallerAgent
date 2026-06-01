@@ -34,6 +34,7 @@ You must respond with ONLY valid JSON in this exact format:
   "human_confidence": <0.0-1.0>,
   "action": "<action_type>",
   "value": "<value_if_applicable>",
+  "ended_reason": "<reason_if_ending>",
   "reasoning": "<brief explanation>",
   "confidence": <0.0-1.0>
 }
@@ -45,8 +46,19 @@ Available actions:
 - say_phrase: Speak a phrase (value: the phrase to say)
 - wait: Wait for more audio (value: seconds as string, e.g. "5")
 - retry: Restart navigation attempt
-- end_call: Give up and end this call
+- end_call: Give up and end this call — MUST set ended_reason (see below)
 - escalate_to_user: Human detected — stop navigating
+
+When action is "end_call", set ended_reason to ONE of:
+- "outside_hours"     — office/representatives closed or not on duty
+- "voicemail"         — call went to voicemail, did not leave message
+- "voicemail_left"    — left a voicemail on their behalf
+- "callback_offered"  — IVR offered a callback option
+- "busy"              — line was busy
+- "no-answer"         — rang but nobody answered
+- "invalid_number"    — number disconnected or invalid
+- "no_human_path"     — navigated extensively but no path to a human exists
+- "failed"            — technical error or unknown reason
 
 IVR navigation principles:
 1. Prioritize historically successful paths (high success_rate)
@@ -289,6 +301,7 @@ function parseAction(text: string): LLMAction {
   return {
     action: parsed.action,
     value: parsed.value,
+    endedReason: parsed.ended_reason ?? undefined,
     reasoning: parsed.reasoning ?? '',
     confidence: parsed.confidence > 0 ? parsed.confidence : 0.5,
     isHuman: parsed.is_human ?? false,

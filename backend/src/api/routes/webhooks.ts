@@ -459,21 +459,24 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         [callId, actionText]
       );
 
-      // When LLM ends the call, classify why so the session shows the right label.
-      // Check recent transcripts because the triggering utterance may have come earlier.
+      // When LLM ends the call, use LLM's own ended_reason first (scalable),
+      // then fall back to regex for cases LLM may miss.
       if (safeAction === 'end_call') {
+        const llmReason = action.endedReason ?? null;
         const recentText = transcripts.slice(-5).map(t => t.text).join(' ');
-        const endReason =
-          isVoicemailGreeting(recentText)        ? 'voicemail'
-          : isOutsideBusinessHours(recentText)   ? 'outside_hours'
-          : isInvalidOrDisconnected(recentText)  ? 'invalid_number'
+        const regexReason = !llmReason
+          ? (isVoicemailGreeting(recentText)       ? 'voicemail'
+            : isOutsideBusinessHours(recentText)   ? 'outside_hours'
+            : isInvalidOrDisconnected(recentText)  ? 'invalid_number'
+            : null)
           : null;
+        const endReason = llmReason ?? regexReason;
         if (endReason) {
           await query(
             `UPDATE calls SET ended_reason = $1 WHERE id = $2 AND ended_reason IS NULL`,
             [endReason, callId]
           );
-          console.log(`[Gather] end_call classified as '${endReason}' for call ${callId}`);
+          console.log(`[Gather] end_call reason='${endReason}' (source: ${llmReason ? 'LLM' : 'regex'}) for call ${callId}`);
         }
       }
 

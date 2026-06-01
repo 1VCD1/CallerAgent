@@ -21,6 +21,7 @@ export type ActionType =
 export interface LLMAction {
   action: ActionType;
   value?: string;
+  endedReason?: string;
   reasoning: string;
   confidence?: number;
   isHuman?: boolean;

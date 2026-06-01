@@ -77,8 +77,27 @@ export function getOutcomeConfig(call: {
       label: 'Cancelled', color: '#64748b',
       bg: 'rgba(100,116,139,0.08)', border: 'rgba(100,116,139,0.20)',
     };
+    case 'no_human_path': return {
+      label: 'No path to human', color: '#94a3b8',
+      bg: 'rgba(148,163,184,0.10)', border: 'rgba(148,163,184,0.22)',
+      icon: 'git-network-outline',
+      actionHint: 'The AI navigated extensively but could not find a path to a human representative. Try calling at a different time.',
+    };
+    case 'max_attempts':
+    case 'low_confidence': return {
+      label: 'Navigation failed', color: '#f97316',
+      bg: 'rgba(249,115,22,0.08)', border: 'rgba(249,115,22,0.22)',
+      icon: 'alert-circle-outline',
+      actionHint: 'The AI was unable to navigate this phone system. Try calling manually.',
+    };
+    case 'failed':
+    case 'llm_error': return {
+      label: 'Error', color: '#ef4444',
+      bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.22)',
+      actionHint: 'A technical error occurred. Please try again.',
+    };
     default: return {
-      label: 'No human', color: '#64748b',
+      label: 'No human reached', color: '#64748b',
       bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)',
     };
   }
