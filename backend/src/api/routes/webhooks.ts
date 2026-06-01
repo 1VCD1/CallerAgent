@@ -276,6 +276,18 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       if (count >= 2) consecutiveSameKey = { key: key!, count };
     }
 
+    // Compute consecutive same say_phrase
+    let consecutiveSamePhrase: { phrase: string; count: number } | undefined;
+    if (previousActions.length > 0 && previousActions[0].action === 'say_phrase') {
+      const phrase = previousActions[0].value;
+      let count = 0;
+      for (const a of previousActions) {
+        if (a.action === 'say_phrase' && a.value === phrase) count++;
+        else break;
+      }
+      if (count >= 2) consecutiveSamePhrase = { phrase: phrase!, count };
+    }
+
     // Short-circuit: if waited 3+ times with NO speech, skip LLM — return fresh Gather
     // Only when spokenText is empty — if IVR said something, always call LLM to respond
     if (consecutiveWaits >= 3 && !spokenText) {
@@ -337,6 +349,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       currentIvrUtterance: spokenText || undefined,
       consecutiveWaits,
       consecutiveSameKey,
+      consecutiveSamePhrase,
       audioAnalysis: orchestrator?.getAudioAnalysis() ?? null,
       actionPatterns: actionPatterns.length > 0 ? actionPatterns : undefined,
       consecutiveLowConfidence: lowConf > 0 ? lowConf : undefined,

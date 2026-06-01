@@ -54,7 +54,16 @@ IVR navigation principles:
 3. If stuck in a loop, try a different approach
 4. If hold music plays, use the wait action
 
-After a transfer announcement ("transferring you", "connecting you to an agent", "one moment while I connect you"), the next person who speaks is likely a live human. A brief wait of 2-3 seconds max is appropriate — do not wait longer than 3 seconds when a transfer was just announced.`;
+After a transfer announcement ("transferring you", "connecting you to an agent", "one moment while I connect you"), the next person who speaks is likely a live human. A brief wait of 2-3 seconds max is appropriate — do not wait longer than 3 seconds when a transfer was just announced.
+
+TERMINAL SIGNALS — use end_call IMMEDIATELY when you detect any of these, regardless of what you've tried:
+- No agents available: "representatives aren't on duty", "no agents available", "our office is closed", "outside of business hours", "closed for the evening/weekend", "not currently on duty", "unavailable at this time"
+- Voicemail: "leave a message after the tone/beep", "you've reached voicemail", "unable to take your call"
+- Invalid number: "this number is not in service", "disconnected", "no longer in service"
+- Busy / no answer signals confirmed by IVR
+
+These are DEAD ENDS — do not retry, do not wait, do not try a different phrase. End immediately.
+The above list is illustrative, not exhaustive — use judgment for similar signals you haven't seen before.`;
 
 export async function decideLLMAction(context: CallContext): Promise<LLMAction> {
   const userMessage = buildContextMessage(context);
@@ -140,6 +149,15 @@ Conversational phrasing ("Of course", "I can help with that", "What's your quest
     ? `\n🚨 DTMF STUCK: You pressed key "${ctx.consecutiveSameKey.key}" ${ctx.consecutiveSameKey.count} times and the IVR still said "didn't get that". This IVR does NOT accept DTMF for this question — it only accepts voice. Switch to say_phrase("yes") or say_phrase("no") immediately. Do NOT press this key again.`
     : '';
 
+  const samePhraseWarning = ctx.consecutiveSamePhrase && ctx.consecutiveSamePhrase.count >= 2
+    ? `\n🚨 PHRASE LOOP (${ctx.consecutiveSamePhrase.count}x): You have said "${ctx.consecutiveSamePhrase.phrase}" ${ctx.consecutiveSamePhrase.count} times in a row. The IVR is NOT routing you to a human with this phrase — it is keeping you in the conversation. You MUST try a completely different strategy this turn:
+  - Try press_key("0") to force operator transfer
+  - Try say_phrase("speak to a representative")
+  - Try say_phrase("agent")
+  - Try say_phrase("human")
+  Do NOT repeat the same phrase again.`
+    : '';
+
   const lowConfWarning = ctx.consecutiveLowConfidence && ctx.consecutiveLowConfidence >= 2
     ? `\n⚠️ LOW CONFIDENCE (${ctx.consecutiveLowConfidence} turns): You have been uncertain for multiple turns. Pick a decisive action this turn — press "0", say "representative", or try a completely different key. Do NOT wait or retry. Your next action must have confidence >= 0.6.`
     : '';
@@ -202,6 +220,7 @@ ${userInfoBlock}
 ${menuKeysBlock}
 ${waitWarning}
 ${sameKeyWarning}
+${samePhraseWarning}
 ${lowConfWarning}
 ${explorationBlock}
 ${userNoteBlock}
