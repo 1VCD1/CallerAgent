@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CallerAgent Debug</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif; }
+    .conf-track { height:5px; background:#334155; border-radius:3px; overflow:hidden; min-width:60px }
+    .conf-fill  { height:100%; border-radius:3px; transition:width .3s }
+    .timeline-line { border-left:2px solid #334155; margin-left:14px; padding-left:16px }
+    .dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; margin-top:4px }
+    .badge { font-size:11px; font-weight:600; padding:2px 7px; border-radius:4px; display:inline-block }
+    .scroll-area { max-height:calc(100vh - 220px); overflow-y:auto }
+    .row-hover:hover { background:#1e293b; cursor:pointer }
+    .tab-btn { padding:8px 18px; border-radius:6px; font-size:14px; font-weight:500; transition:background .15s }
+    .tab-btn.active { background:#3b82f6; color:#fff }
+    .tab-btn:not(.active) { color:#94a3b8 }
+    .tab-btn:not(.active):hover { background:#1e293b; color:#e2e8f0 }
+    ::-webkit-scrollbar { width:6px } ::-webkit-scrollbar-track { background:#0f172a }
+    ::-webkit-scrollbar-thumb { background:#334155; border-radius:3px }
+    .culprit-critical { background:#450a0a; border:1px solid #7f1d1d; }
+    .culprit-warning  { background:#451a03; border:1px solid #78350f; }
+    .culprit-info     { background:#0c1a2e; border:1px solid #1e3a5f; }
+    .culprit-ok       { background:#052e16; border:1px solid #14532d; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+
+<!-- Header -->
+<header class="sticky top-0 z-50 bg-slate-900 border-b border-slate-700 px-6 py-3 flex items-center gap-6">
+  <div class="flex items-center gap-2">
+    <span class="text-blue-400 text-lg">📞</span>
+    <span class="font-bold text-slate-100 text-sm">CallerAgent</span>
+    <span class="text-slate-500 text-sm font-mono">Debug</span>
+  </div>
+  <nav class="flex gap-1 ml-2">
+    <button id="tab-overview" class="tab-btn active" onclick="showTab('overview')">Overview</button>
+    <button id="tab-calls"    class="tab-btn"        onclick="showTab('calls')">Call Log</button>
+  </nav>
+  <div class="ml-auto text-slate-500 text-xs font-mono" id="last-updated"></div>
+</header>
+
+<!-- OVERVIEW TAB -->
+<div id="screen-overview" class="p-6 max-w-7xl mx-auto">
+  <!-- KPI cards -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" id="kpi-row">
+    <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
+    <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
+    <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
+    <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
+  </div>
+  <!-- Outcomes + Companies -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="bg-slate-800 rounded-lg p-4">
+      <h3 class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3">Outcomes (7d)</h3>
+      <div id="outcomes-chart" class="space-y-2"></div>
+    </div>
+    <div class="bg-slate-800 rounded-lg p-4">
+      <h3 class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3">Companies (7d)</h3>
+      <div id="companies-table" class="scroll-area" style="max-height:300px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- CALLS TAB -->
+<div id="screen-calls" class="hidden p-6 max-w-7xl mx-auto">
+  <!-- Filters -->
+  <div class="flex flex-wrap gap-3 mb-4 items-center">
+    <input id="filter-company" type="text" placeholder="Filter company…"
+      class="bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-lg px-3 py-2 w-48 focus:outline-none focus:border-blue-500"
+      oninput="debounceLoadCalls()" />
+    <select id="filter-outcome"
+      class="bg-slate-800 border border-slate-700 text-slate-100 text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+      onchange="loadCalls()">
+      <option value="">All outcomes</option>
+      <option value="human_reached">✅ Human reached</option>
+      <option value="failed">❌ Failed</option>
+      <option value="no_human_path">No human path</option>
+      <option value="outside_hours">Outside hours</option>
+      <option value="voicemail">Voicemail</option>
+      <option value="callback_offered">Callback offered</option>
+      <option value="max_attempts">Max attempts</option>
+    </select>
+    <button onclick="loadCalls()" class="bg-blue-600 hover:bg-blue-500 text-white text-sm px-4 py-2 rounded-lg">Refresh</button>
+    <span id="calls-count" class="text-slate-500 text-sm ml-auto"></span>
+  </div>
+  <!-- Table -->
+  <div class="bg-slate-800 rounded-lg overflow-hidden">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-slate-700 text-slate-400 text-xs uppercase tracking-wider">
+          <th class="text-left px-4 py-3">Company</th>
+          <th class="text-left px-4 py-3">Started</th>
+          <th class="text-left px-4 py-3">Duration</th>
+          <th class="text-left px-4 py-3">Outcome</th>
+          <th class="text-right px-4 py-3">Decisions</th>
+          <th class="text-right px-4 py-3">Avg Latency</th>
+          <th class="text-left px-4 py-3">Issues</th>
+        </tr>
+      </thead>
+      <tbody id="calls-tbody">
+        <tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- DETAIL SCREEN (hidden, replaces content) -->
+<div id="screen-detail" class="hidden p-6 max-w-7xl mx-auto">
+  <!-- Back -->
+  <button onclick="backToCalls()" class="flex items-center gap-2 text-slate-400 hover:text-slate-100 text-sm mb-4 transition-colors">
+    ← Back to Call Log
+  </button>
+  <!-- Call header -->
+  <div class="bg-slate-800 rounded-lg p-4 mb-4 flex flex-wrap gap-4 items-start" id="detail-header"></div>
+  <!-- Two-column layout: culprit (left) + stats (right) -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+    <div class="lg:col-span-2">
+      <h3 class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">🔍 Culprit Analysis</h3>
+      <div id="culprit-list" class="space-y-2"></div>
+    </div>
+    <div>
+      <h3 class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">📊 Stats</h3>
+      <div id="detail-stats" class="bg-slate-800 rounded-lg p-4 space-y-3"></div>
+    </div>
+  </div>
+  <!-- Decision timeline -->
+  <h3 class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-2">📜 Decision Timeline</h3>
+  <div class="bg-slate-800 rounded-lg p-4 scroll-area" id="timeline"></div>
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let currentTab = 'overview';
+let _debounceTimer = null;
+
+// ─── Navigation ───────────────────────────────────────────────────────────────
+function showTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-overview').classList.toggle('active', tab === 'overview');
+  document.getElementById('tab-calls').classList.toggle('active', tab === 'calls');
+  document.getElementById('screen-overview').classList.toggle('hidden', tab !== 'overview');
+  document.getElementById('screen-calls').classList.toggle('hidden', tab !== 'calls');
+  document.getElementById('screen-detail').classList.add('hidden');
+  if (tab === 'calls') loadCalls();
+}
+
+function showDetail() {
+  document.getElementById('screen-overview').classList.add('hidden');
+  document.getElementById('screen-calls').classList.add('hidden');
+  document.getElementById('screen-detail').classList.remove('hidden');
+}
+
+function backToCalls() {
+  document.getElementById('screen-detail').classList.add('hidden');
+  if (currentTab === 'calls') document.getElementById('screen-calls').classList.remove('hidden');
+  else document.getElementById('screen-overview').classList.remove('hidden');
+}
+
+function debounceLoadCalls() {
+  clearTimeout(_debounceTimer);
+  _debounceTimer = setTimeout(loadCalls, 350);
+}
+
+// ─── Fetch helpers ────────────────────────────────────────────────────────────
+async function api(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+// ─── Overview ─────────────────────────────────────────────────────────────────
+async function loadOverview() {
+  const data = await api('/debug/overview');
+  renderKpis(data.kpis);
+  renderOutcomes(data.outcomes);
+  renderCompanies(data.companies);
+  document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+function renderKpis(k) {
+  if (!k) return;
+  const successColor = k.success_pct >= 70 ? 'text-emerald-400' : k.success_pct >= 40 ? 'text-amber-400' : 'text-red-400';
+  const latencyColor = k.avg_latency_ms <= 500 ? 'text-emerald-400' : k.avg_latency_ms <= 1000 ? 'text-amber-400' : 'text-red-400';
+  const prefetchColor = k.prefetch_pct >= 60 ? 'text-emerald-400' : 'text-amber-400';
+  document.getElementById('kpi-row').innerHTML = `
+    ${kpiCard('Total Calls (7d)', k.total_calls ?? '—', 'text-blue-400', `${k.calls_24h ?? 0} in last 24h`)}
+    ${kpiCard('Success Rate', k.success_pct != null ? k.success_pct + '%' : '—', successColor, `${k.successful ?? 0} of ${k.total_calls ?? 0} calls`)}
+    ${kpiCard('Avg LLM Latency', k.avg_latency_ms ? k.avg_latency_ms + 'ms' : '—', latencyColor, `p95: ${k.p95_latency_ms ?? '—'}ms`)}
+    ${kpiCard('Prefetch Hit Rate', k.prefetch_pct != null ? k.prefetch_pct + '%' : '—', prefetchColor, 'AI decision reuse')}
+  `;
+}
+
+function kpiCard(label, value, color, sub) {
+  return `<div class="bg-slate-800 rounded-lg p-4">
+    <div class="text-slate-400 text-xs font-medium mb-1">${label}</div>
+    <div class="text-2xl font-bold ${color}">${value}</div>
+    <div class="text-slate-500 text-xs mt-1">${sub}</div>
+  </div>`;
+}
+
+function renderOutcomes(outcomes) {
+  if (!outcomes?.length) return;
+  const total = outcomes.reduce((s, o) => s + parseInt(o.count), 0);
+  document.getElementById('outcomes-chart').innerHTML = outcomes.map(o => {
+    const pct = total ? Math.round(parseInt(o.count) / total * 100) : 0;
+    const color = o.outcome === 'human_reached' ? '#10b981'
+                : o.outcome.includes('voicemail') ? '#f59e0b'
+                : o.outcome.includes('hours') ? '#f59e0b'
+                : o.outcome === 'callback_offered' ? '#3b82f6'
+                : '#ef4444';
+    return `<div class="flex items-center gap-2">
+      <div class="text-slate-400 text-xs w-36 truncate" title="${o.outcome}">${outcomeLabel(o.outcome)}</div>
+      <div class="flex-1 bg-slate-700 rounded-full h-2 overflow-hidden">
+        <div style="width:${pct}%;background:${color}" class="h-full rounded-full transition-all duration-500"></div>
+      </div>
+      <div class="text-slate-300 text-xs w-12 text-right">${o.count} <span class="text-slate-500">${pct}%</span></div>
+    </div>`;
+  }).join('');
+}
+
+function renderCompanies(companies) {
+  if (!companies?.length) { document.getElementById('companies-table').innerHTML = '<div class="text-slate-500 text-sm">No data yet</div>'; return; }
+  document.getElementById('companies-table').innerHTML = `
+    <table class="w-full text-xs">
+      <thead><tr class="text-slate-500 border-b border-slate-700">
+        <th class="text-left pb-2">Company</th>
+        <th class="text-right pb-2">Calls</th>
+        <th class="text-right pb-2">Success%</th>
+        <th class="text-right pb-2">Avg Wait</th>
+      </tr></thead>
+      <tbody>
+        ${companies.map(c => `<tr class="border-b border-slate-700/50 row-hover" onclick="goToCompany('${c.company}')">
+          <td class="py-2 text-slate-200 font-medium">${c.company}</td>
+          <td class="text-right text-slate-400">${c.total}</td>
+          <td class="text-right font-semibold ${c.success_pct >= 70 ? 'text-emerald-400' : c.success_pct >= 40 ? 'text-amber-400' : 'text-red-400'}">${c.success_pct ?? '—'}%</td>
+          <td class="text-right text-slate-400">${c.avg_wait_secs ? fmtSecs(c.avg_wait_secs) : '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function goToCompany(company) {
+  document.getElementById('filter-company').value = company;
+  showTab('calls');
+}
+
+// ─── Calls list ───────────────────────────────────────────────────────────────
+async function loadCalls() {
+  const company = document.getElementById('filter-company')?.value ?? '';
+  const outcome = document.getElementById('filter-outcome')?.value ?? '';
+  const params = new URLSearchParams({ company, outcome, limit: '60' });
+  const calls = await api(`/debug/calls?${params}`);
+  renderCallsTable(calls);
+}
+
+function renderCallsTable(calls) {
+  document.getElementById('calls-count').textContent = `${calls.length} calls`;
+  if (!calls.length) {
+    document.getElementById('calls-tbody').innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No calls found</td></tr>';
+    return;
+  }
+  document.getElementById('calls-tbody').innerHTML = calls.map(c => {
+    const issues = [];
+    if (c.had_phrase_loop) issues.push('<span class="badge bg-red-900 text-red-300" title="AI repeated same phrase">LOOP</span>');
+    if (c.had_dtmf_stuck)  issues.push('<span class="badge bg-red-900 text-red-300" title="AI pressed same DTMF key repeatedly">DTMF</span>');
+    if (c.had_downgrade)   issues.push('<span class="badge bg-amber-900 text-amber-300" title="Escalation was downgraded to wait">DNGRD</span>');
+    if (c.had_low_conf)    issues.push('<span class="badge bg-amber-900 text-amber-300" title="Multiple low-confidence turns">LOW♻</span>');
+    const latencyColor = !c.avg_latency_ms ? '' : c.avg_latency_ms <= 500 ? 'text-emerald-400' : c.avg_latency_ms <= 1000 ? 'text-amber-400' : 'text-red-400';
+    return `<tr class="border-b border-slate-700/50 row-hover" onclick="openDetail('${c.id}')">
+      <td class="px-4 py-3 font-medium text-slate-200">${c.company}</td>
+      <td class="px-4 py-3 text-slate-400 text-xs">${relTime(c.started_at)}</td>
+      <td class="px-4 py-3 text-slate-400 text-xs">${c.duration_secs ? fmtSecs(c.duration_secs) : '—'}</td>
+      <td class="px-4 py-3">${outcomePill(c)}</td>
+      <td class="px-4 py-3 text-right text-slate-400">${c.decision_count ?? 0}</td>
+      <td class="px-4 py-3 text-right text-xs ${latencyColor}">${c.avg_latency_ms ? c.avg_latency_ms + 'ms' : '—'}</td>
+      <td class="px-4 py-3 flex gap-1 flex-wrap">${issues.join('') || '<span class="text-slate-600 text-xs">—</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─── Call detail ──────────────────────────────────────────────────────────────
+async function openDetail(callId) {
+  showDetail();
+  document.getElementById('detail-header').innerHTML = '<div class="text-slate-500 text-sm">Loading…</div>';
+  document.getElementById('culprit-list').innerHTML = '';
+  document.getElementById('timeline').innerHTML = '<div class="text-slate-500 text-sm py-4 text-center">Loading timeline…</div>';
+
+  const data = await api(`/debug/calls/${callId}`);
+  renderDetailHeader(data.call);
+  renderCulprits(data.debugEvents, data.call, data.hasMemoryPatterns);
+  renderDetailStats(data.debugEvents, data.call);
+  renderTimeline(data.transcripts, data.debugEvents);
+}
+
+function renderDetailHeader(call) {
+  const dur = call.ended_at ? Math.round((new Date(call.ended_at) - new Date(call.started_at)) / 1000) : null;
+  document.getElementById('detail-header').innerHTML = `
+    <div>
+      <div class="text-lg font-bold text-slate-100">${call.company}</div>
+      <div class="text-slate-500 text-xs font-mono">${call.phone_number}</div>
+    </div>
+    <div>${outcomePill(call)}</div>
+    <div class="text-slate-400 text-sm">${dur ? fmtSecs(dur) : '—'}</div>
+    <div class="text-slate-500 text-xs">${new Date(call.started_at).toLocaleString()}</div>
+    ${call.goal !== 'reach_human' ? `<div class="badge bg-slate-700 text-slate-300">${call.goal}</div>` : ''}
+    <div class="ml-auto text-slate-600 text-xs font-mono">${call.id.slice(0,8)}…</div>
+  `;
+}
+
+// ─── Culprit Analysis ─────────────────────────────────────────────────────────
+function renderCulprits(debugEvents, call, hasMemoryPatterns) {
+  const culprits = analyzeCulprits(debugEvents, call, hasMemoryPatterns);
+  if (!culprits.length) {
+    document.getElementById('culprit-list').innerHTML = `<div class="culprit-ok rounded-lg p-3 text-sm text-emerald-300">✅ No obvious issues detected in this call's debug data.</div>`;
+    return;
+  }
+  document.getElementById('culprit-list').innerHTML = culprits.map(c => {
+    const cls = c.severity === 'critical' ? 'culprit-critical' : c.severity === 'warning' ? 'culprit-warning' : 'culprit-info';
+    const icon = c.severity === 'critical' ? '🔴' : c.severity === 'warning' ? '🟡' : '🔵';
+    return `<div class="${cls} rounded-lg p-3">
+      <div class="font-semibold text-sm text-slate-100 mb-0.5">${icon} ${c.title}</div>
+      <div class="text-slate-400 text-xs">${c.detail}</div>
+      ${c.fix ? `<div class="text-blue-400 text-xs mt-1 font-medium">→ Fix: ${c.fix}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function analyzeCulprits(debugEvents, call, hasMemoryPatterns) {
+  const decisions  = debugEvents.filter(e => e.event_type === 'llm_decision').map(e => e.data);
+  const detections = debugEvents.filter(e => e.event_type === 'human_detection').map(e => e.data);
+  const summary    = debugEvents.find(e => e.event_type === 'call_summary')?.data;
+  const culprits   = [];
+
+  // 1. Phrase loop
+  const phraseLoops = decisions.filter(d => d.consecutive_same_phrase?.count >= 2);
+  if (phraseLoops.length) {
+    const worst = phraseLoops.reduce((a, b) => a.consecutive_same_phrase.count > b.consecutive_same_phrase.count ? a : b);
+    culprits.push({
+      severity: 'critical',
+      title: `Phrase loop: said "${worst.consecutive_same_phrase.phrase}" ${worst.consecutive_same_phrase.count}× with no effect`,
+      detail: `AI repeated the same phrase ${phraseLoops.length} time(s). IVR wasn't routing to human with this phrase.`,
+      fix: 'Add IVR note specifying which phrase actually works for this company.'
+    });
+  }
+
+  // 2. DTMF stuck
+  const dtmfStuck = decisions.filter(d => d.consecutive_same_key?.count >= 2);
+  if (dtmfStuck.length) {
+    const worst = dtmfStuck.reduce((a, b) => a.consecutive_same_key.count > b.consecutive_same_key.count ? a : b);
+    culprits.push({
+      severity: 'critical',
+      title: `DTMF stuck: pressed key "${worst.consecutive_same_key.key}" ${worst.consecutive_same_key.count}× — IVR may require voice`,
+      detail: 'Some IVRs reject DTMF for certain questions and only accept voice input.',
+      fix: 'Add IVR note: "DTMF not accepted here — use say_phrase instead".'
+    });
+  }
+
+  // 3. Menu key miss (AI pressed a key not in the current menu)
+  const keyMisses = decisions.filter(d =>
+    d.action === 'press_key' &&
+    d.available_menu_keys?.length > 0 &&
+    !d.available_menu_keys.includes(String(d.value))
+  );
+  if (keyMisses.length) {
+    culprits.push({
+      severity: 'critical',
+      title: `Menu key miss: pressed [${keyMisses.map(d => d.value).join(', ')}] but those weren't in the menu`,
+      detail: keyMisses.map(d => `Pressed [${d.value}] — valid keys were [${d.available_menu_keys.join(', ')}]`).join('; '),
+      fix: 'IVR menu may have changed. Update IVR notes with correct menu structure.'
+    });
+  }
+
+  // 4. Escalation downgraded
+  const downgrades = decisions.filter(d => d.downgraded);
+  if (downgrades.length) {
+    const maxConf = Math.max(...downgrades.map(d => d.human_confidence ?? 0));
+    culprits.push({
+      severity: 'warning',
+      title: `${downgrades.length} escalation(s) downgraded to wait (highest human_conf: ${(maxConf * 100).toFixed(0)}%)`,
+      detail: 'AI detected a potential human but confidence was below 0.75. May be a missed human.',
+      fix: 'Review timeline entries marked DNGRD — were these real humans?'
+    });
+  }
+
+  // 5. Near-miss human detection (Deepgram path)
+  const nearMiss = detections.filter(d => d.confidence >= 0.45 && d.confidence < 0.75 && !call.human_reached);
+  if (nearMiss.length) {
+    const highest = Math.max(...nearMiss.map(d => d.confidence));
+    culprits.push({
+      severity: 'warning',
+      title: `${nearMiss.length} near-miss human detection(s) — highest confidence: ${(highest * 100).toFixed(0)}% (threshold: 75%)`,
+      detail: nearMiss.map(d => `"${(d.transcript ?? '').slice(0, 60)}…" — ${(d.confidence * 100).toFixed(0)}%`).slice(0, 2).join('\n'),
+      fix: 'Check if the human_detection threshold (0.75) should be lowered for this type of IVR.'
+    });
+  }
+
+  // 6. High LLM latency
+  const latencies = decisions.filter(d => d.latency_ms > 0).map(d => d.latency_ms);
+  if (latencies.length) {
+    const avg = Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length);
+    const max = Math.max(...latencies);
+    const prefetchHits = decisions.filter(d => d.decision_source === 'prefetch').length;
+    if (avg > 1000) {
+      culprits.push({
+        severity: 'warning',
+        title: `High LLM latency: avg ${avg}ms, max ${max}ms`,
+        detail: `Slow decisions cause timing mismatches with IVR speechTimeout. Prefetch hit rate: ${prefetchHits}/${decisions.length}`,
+        fix: 'Prefetch should kick in — if hit rate is low, IVR may be speaking too fast.'
+      });
+    }
+  }
+
+  // 7. Low confidence collapse
+  const lowConfTurns = decisions.filter(d => (d.low_conf_counter_new ?? 0) >= 2);
+  if (lowConfTurns.length >= 2) {
+    culprits.push({
+      severity: 'warning',
+      title: `AI confidence collapsed: ${lowConfTurns.length} turns with confidence < 0.45`,
+      detail: 'AI was confused for multiple consecutive turns. Possible cause: IVR truncation or unexpected menu structure.',
+      fix: 'Check IVR utterances in these turns — look for truncated text ending mid-sentence.'
+    });
+  }
+
+  // 8. No historical context
+  if (!hasMemoryPatterns && !call.human_reached) {
+    culprits.push({
+      severity: 'info',
+      title: 'No historical navigation patterns for this company',
+      detail: 'AI had to explore blindly without prior knowledge of this IVR system.',
+      fix: 'Patterns are auto-generated after a successful call. Collect more calls to build context.'
+    });
+  }
+
+  // 9. IVR truncation heuristic (short utterances that look cut off)
+  const truncatedTurns = decisions.filter(d => {
+    const u = d.ivr_utterance ?? '';
+    return u.length > 0 && u.length < 40 && (u.endsWith(',') || u.endsWith('press') || /\d,$/.test(u));
+  });
+  if (truncatedTurns.length >= 2) {
+    culprits.push({
+      severity: 'warning',
+      title: `Possible IVR truncation: ${truncatedTurns.length} utterances look cut off (speechTimeout too aggressive)`,
+      detail: truncatedTurns.slice(0, 3).map(d => `"${d.ivr_utterance}"`).join(' | '),
+      fix: 'speechTimeout="auto" fires too early on IVRs with pauses. AI received partial menu text.'
+    });
+  }
+
+  return culprits;
+}
+
+// ─── Stats panel ──────────────────────────────────────────────────────────────
+function renderDetailStats(debugEvents, call) {
+  const decisions = debugEvents.filter(e => e.event_type === 'llm_decision').map(e => e.data);
+  const summary   = debugEvents.find(e => e.event_type === 'call_summary')?.data;
+
+  const latencies = decisions.filter(d => d.latency_ms > 0).map(d => d.latency_ms);
+  const avgLat    = latencies.length ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : null;
+  const prefetch  = decisions.filter(d => d.decision_source === 'prefetch').length;
+  const breakdown = summary?.actions_breakdown ?? {};
+
+  const actionColors = { press_key: '#3b82f6', say_phrase: '#a855f7', wait: '#6b7280', end_call: '#ef4444', escalate_to_user: '#f59e0b', retry: '#94a3b8' };
+
+  document.getElementById('detail-stats').innerHTML = `
+    ${statRow('LLM Avg Latency', avgLat ? `${avgLat}ms` : '—', avgLat > 1000 ? 'text-red-400' : avgLat > 500 ? 'text-amber-400' : 'text-emerald-400')}
+    ${statRow('Prefetch Hits', latencies.length ? `${prefetch}/${decisions.length} (${Math.round(prefetch/decisions.length*100)}%)` : '—', 'text-blue-400')}
+    ${statRow('Total Decisions', decisions.length, 'text-slate-200')}
+    <div class="border-t border-slate-700 pt-2 mt-1">
+      <div class="text-slate-500 text-xs mb-2">Actions breakdown</div>
+      ${Object.entries(breakdown).map(([action, count]) =>
+        `<div class="flex items-center gap-2 mb-1">
+          <span class="badge text-white text-xs" style="background:${actionColors[action] ?? '#6b7280'}">${action}</span>
+          <span class="text-slate-300 text-sm ml-auto">${count}</span>
+        </div>`
+      ).join('') || '<div class="text-slate-600 text-xs">No data</div>'}
+    </div>
+  `;
+}
+
+function statRow(label, value, color) {
+  return `<div class="flex justify-between items-center text-sm">
+    <span class="text-slate-500">${label}</span>
+    <span class="font-semibold ${color}">${value}</span>
+  </div>`;
+}
+
+// ─── Timeline ─────────────────────────────────────────────────────────────────
+function renderTimeline(transcripts, debugEvents) {
+  if (!transcripts.length) {
+    document.getElementById('timeline').innerHTML = '<div class="text-slate-500 text-sm">No transcript available</div>';
+    return;
+  }
+
+  const decisions  = [...debugEvents.filter(e => e.event_type === 'llm_decision')]
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const detections = [...debugEvents.filter(e => e.event_type === 'human_detection')]
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+  // Match AI transcript entries sequentially to llm_decision events
+  let dIdx = 0, detIdx = 0;
+
+  const html = transcripts.map((t, i) => {
+    let debugData = null, detData = null;
+
+    if (t.speaker === 'AI' && dIdx < decisions.length) {
+      debugData = decisions[dIdx++].data;
+    }
+    if (t.speaker === 'IVR') {
+      // find nearest human_detection by transcript content
+      const match = detections.findIndex(d =>
+        d.data?.transcript && t.text.toLowerCase().includes((d.data.transcript ?? '').toLowerCase().slice(0, 20))
+      );
+      if (match >= 0) { detData = detections[match].data; }
+    }
+
+    if (t.speaker === 'IVR') return renderIvrEntry(t, detData);
+    if (t.speaker === 'AI')  return renderAiEntry(t, debugData);
+    return renderHumanEntry(t);
+  }).join('');
+
+  document.getElementById('timeline').innerHTML = `<div class="space-y-0">${html}</div>`;
+}
+
+function renderIvrEntry(t, detection) {
+  const isTruncated = t.text.length < 40 && (t.text.endsWith(',') || /\d,$/.test(t.text) || t.text.endsWith('press'));
+  const truncWarn   = isTruncated ? ' <span class="badge bg-amber-900 text-amber-300 text-xs" title="Possibly truncated by speechTimeout">TRUNC</span>' : '';
+  const detInfo     = detection ? `<div class="flex gap-3 mt-1 text-xs text-slate-500">
+    <span>audio: ${(detection.audio_confidence * 100).toFixed(0)}%</span>
+    <span>keyword: ${((detection.keyword_confidence ?? 0) * 100).toFixed(0)}%</span>
+    <span>→ ${(detection.confidence * 100).toFixed(0)}% human</span>
+    ${detection.non_human_patterns_matched?.length ? `<span class="text-slate-600">IVR pattern: ${detection.non_human_patterns_matched[0].slice(0,30)}</span>` : ''}
+  </div>` : '';
+
+  return `<div class="flex gap-3 py-2 border-b border-slate-700/30">
+    <div class="flex flex-col items-center">
+      <div class="dot bg-slate-500"></div>
+      <div class="flex-1 w-px bg-slate-700 mt-1"></div>
+    </div>
+    <div class="flex-1 pb-1">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="badge bg-slate-700 text-slate-300">IVR</span>
+        <span class="text-slate-500 text-xs">${new Date(t.timestamp).toLocaleTimeString()}</span>
+        ${truncWarn}
+      </div>
+      <div class="text-slate-200 text-sm leading-relaxed">"${t.text}"</div>
+      ${detInfo}
+    </div>
+  </div>`;
+}
+
+function renderAiEntry(t, d) {
+  if (!d) {
+    return `<div class="flex gap-3 py-2 border-b border-slate-700/30">
+      <div class="flex flex-col items-center">
+        <div class="dot bg-blue-500"></div>
+        <div class="flex-1 w-px bg-slate-700 mt-1"></div>
+      </div>
+      <div class="flex-1 pb-1">
+        <span class="badge bg-slate-700 text-slate-300">AI</span>
+        <span class="text-slate-400 text-sm ml-2">${t.text}</span>
+      </div>
+    </div>`;
+  }
+
+  const actionColors = { press_key: '#3b82f6', say_phrase: '#a855f7', wait: '#6b7280', end_call: '#ef4444', escalate_to_user: '#f59e0b', retry: '#94a3b8' };
+  const color = actionColors[d.action] ?? '#6b7280';
+  const confPct = Math.round((d.confidence ?? 0) * 100);
+  const hconfPct = Math.round((d.human_confidence ?? 0) * 100);
+  const confColor = confPct >= 70 ? '#10b981' : confPct >= 45 ? '#f59e0b' : '#ef4444';
+
+  const warnings = [];
+  if (d.consecutive_same_phrase?.count >= 2) warnings.push(`<span class="badge bg-red-900 text-red-300">LOOP×${d.consecutive_same_phrase.count}</span>`);
+  if (d.consecutive_same_key?.count >= 2)    warnings.push(`<span class="badge bg-red-900 text-red-300">DTMF×${d.consecutive_same_key.count}</span>`);
+  if (d.downgraded)                          warnings.push(`<span class="badge bg-amber-900 text-amber-300">DNGRD</span>`);
+  if ((d.low_conf_counter_new ?? 0) >= 2)    warnings.push(`<span class="badge bg-amber-900 text-amber-300">LOW♻${d.low_conf_counter_new}</span>`);
+  if (d.transfer_pending)                    warnings.push(`<span class="badge bg-blue-900 text-blue-300">XFER</span>`);
+
+  const prefetchBadge = d.decision_source === 'prefetch'
+    ? '<span class="badge bg-emerald-900 text-emerald-300 text-xs">pre-fetched</span>'
+    : '';
+
+  return `<div class="flex gap-3 py-2 border-b border-slate-700/30">
+    <div class="flex flex-col items-center">
+      <div class="dot" style="background:${color}"></div>
+      <div class="flex-1 w-px bg-slate-700 mt-1"></div>
+    </div>
+    <div class="flex-1 pb-1">
+      <div class="flex flex-wrap items-center gap-2 mb-1">
+        <span class="badge text-white font-semibold" style="background:${color}">${d.action}${d.value ? ': ' + d.value : ''}</span>
+        ${d.latency_ms ? `<span class="text-slate-500 text-xs">${d.latency_ms}ms</span>` : ''}
+        ${prefetchBadge}
+        ${warnings.join('')}
+      </div>
+      <div class="flex items-center gap-4 mb-1">
+        <div class="flex items-center gap-1.5">
+          <span class="text-slate-600 text-xs">conf</span>
+          <div class="conf-track w-16"><div class="conf-fill" style="width:${confPct}%;background:${confColor}"></div></div>
+          <span class="text-xs" style="color:${confColor}">${confPct}%</span>
+        </div>
+        ${hconfPct > 5 ? `<div class="flex items-center gap-1.5">
+          <span class="text-slate-600 text-xs">human</span>
+          <div class="conf-track w-16"><div class="conf-fill" style="width:${hconfPct}%;background:#f59e0b"></div></div>
+          <span class="text-amber-400 text-xs">${hconfPct}%</span>
+        </div>` : ''}
+        ${d.audio_confidence != null && d.audio_frames > 10 ? `<span class="text-slate-600 text-xs">audio:${(d.audio_confidence*100).toFixed(0)}%</span>` : ''}
+      </div>
+      <div class="text-slate-400 text-xs italic leading-relaxed">${d.reasoning || ''}</div>
+      ${d.available_menu_keys?.length ? `<div class="text-slate-600 text-xs mt-0.5">menu keys: [${d.available_menu_keys.join(', ')}]</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderHumanEntry(t) {
+  return `<div class="flex gap-3 py-2 border-b border-slate-700/30">
+    <div class="flex flex-col items-center">
+      <div class="dot bg-emerald-400"></div>
+    </div>
+    <div class="flex-1">
+      <span class="badge bg-emerald-900 text-emerald-300">HUMAN</span>
+      <span class="text-emerald-200 text-sm ml-2">"${t.text}"</span>
+    </div>
+  </div>`;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function outcomeLabel(outcome) {
+  const map = {
+    human_reached: '✅ Human reached', no_human_path: '❌ No human path',
+    outside_hours: '🕐 Outside hours', voicemail: '📭 Voicemail',
+    voicemail_left: '📬 Voicemail left', callback_offered: '📞 Callback offered',
+    max_attempts: '🔄 Max attempts', low_confidence: '🤔 Low confidence',
+    llm_error: '💥 LLM error', invalid_number: '🚫 Invalid number',
+    busy: '📵 Busy', 'no-answer': '🔕 No answer', completed: '✅ Completed',
+    server_restart: '🔁 Server restart', failed: '❌ Failed',
+  };
+  return map[outcome] ?? outcome;
+}
+
+function outcomePill(call) {
+  const outcome = call.human_reached ? 'human_reached' : (call.ended_reason ?? call.status);
+  const colors = {
+    human_reached: 'bg-emerald-900 text-emerald-300',
+    no_human_path: 'bg-red-900 text-red-300',
+    max_attempts: 'bg-red-900 text-red-300',
+    outside_hours: 'bg-amber-900 text-amber-300',
+    voicemail: 'bg-amber-900 text-amber-300',
+    voicemail_left: 'bg-amber-900 text-amber-300',
+    callback_offered: 'bg-blue-900 text-blue-300',
+    server_restart: 'bg-slate-700 text-slate-400',
+    failed: 'bg-slate-700 text-slate-400',
+    ENDED: 'bg-slate-700 text-slate-400',
+  };
+  const cls = colors[outcome] ?? 'bg-slate-700 text-slate-400';
+  return `<span class="badge ${cls}">${outcomeLabel(outcome)}</span>`;
+}
+
+function fmtSecs(s) {
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60), sec = s % 60;
+  return `${m}m${sec > 0 ? ' ' + sec + 's' : ''}`;
+}
+
+function relTime(ts) {
+  const diff = Date.now() - new Date(ts);
+  const m = Math.floor(diff / 60000);
+  if (m < 1)   return 'just now';
+  if (m < 60)  return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24)  return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+loadOverview();
+</script>
+</body>
+</html>
