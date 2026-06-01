@@ -96,6 +96,12 @@ export function getOutcomeConfig(call: {
       bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.22)',
       actionHint: 'A technical error occurred. Please try again.',
     };
+    case 'server_restart': return {
+      label: 'Interrupted', color: '#f59e0b',
+      bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.22)',
+      icon: 'refresh-outline',
+      actionHint: 'The call was interrupted by a server update. Please try again.',
+    };
     default: return {
       label: 'No human reached', color: '#64748b',
       bg: 'rgba(100,116,139,0.10)', border: 'rgba(100,116,139,0.25)',
