@@ -3,9 +3,9 @@ import { query, queryOne } from '../../db/client';
 
 const debugPlugin: FastifyPluginAsync = async (fastify) => {
 
-  // Aggregated KPIs + funnel + outcome breakdown + company table (last 7 days)
+  // Aggregated KPIs + funnel + guard rails + outcome breakdown + company table (last 7 days)
   fastify.get('/debug/overview', async () => {
-    const [kpis, funnel, outcomes, companies] = await Promise.all([
+    const [kpis, funnel, guardRails, outcomes, companies] = await Promise.all([
       queryOne<any>(`
         SELECT
           ROUND(AVG((dl.data->>'latency_ms')::int) FILTER (
@@ -18,7 +18,10 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
             COUNT(dl.id) FILTER (WHERE dl.event_type = 'llm_decision' AND dl.data->>'decision_source' = 'prefetch')::numeric /
             NULLIF(COUNT(dl.id) FILTER (WHERE dl.event_type = 'llm_decision'), 0) * 100
           )                                                                            AS prefetch_pct,
-          COUNT(DISTINCT c.id) FILTER (WHERE c.started_at > NOW() - INTERVAL '24 hours') AS calls_24h
+          COUNT(DISTINCT c.id) FILTER (WHERE c.started_at > NOW() - INTERVAL '24 hours') AS calls_24h,
+          ROUND(AVG(c.wait_duration_seconds) FILTER (
+            WHERE c.human_reached AND c.wait_duration_seconds IS NOT NULL
+          ))                                                                            AS avg_time_to_human_secs
         FROM calls c
         LEFT JOIN call_debug_logs dl ON dl.call_id = c.id
         WHERE c.started_at > NOW() - INTERVAL '7 days'
@@ -47,6 +50,39 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
              'busy','no-answer','callback_caller_id'))                                 AS navigable
         FROM calls
         WHERE started_at > NOW() - INTERVAL '7 days'
+      `),
+      queryOne<any>(`
+        SELECT
+          -- % navigated calls that had a phrase loop
+          ROUND(
+            COUNT(DISTINCT c.id) FILTER (WHERE loop_flag.call_id IS NOT NULL)::numeric /
+            NULLIF(COUNT(DISTINCT c.id) FILTER (WHERE nav_flag.call_id IS NOT NULL), 0) * 100
+          ) AS phrase_loop_pct,
+          -- % navigated calls with low confidence collapse
+          ROUND(
+            COUNT(DISTINCT c.id) FILTER (WHERE lowconf_flag.call_id IS NOT NULL)::numeric /
+            NULLIF(COUNT(DISTINCT c.id) FILTER (WHERE nav_flag.call_id IS NOT NULL), 0) * 100
+          ) AS low_conf_pct,
+          -- callback_caller_id count (callback but no number given)
+          COUNT(DISTINCT c.id) FILTER (WHERE c.ended_reason = 'callback_caller_id') AS callback_caller_id_count
+        FROM calls c
+        LEFT JOIN LATERAL (
+          SELECT call_id FROM call_debug_logs dl
+          WHERE dl.call_id = c.id AND dl.event_type = 'llm_decision' LIMIT 1
+        ) nav_flag ON true
+        LEFT JOIN LATERAL (
+          SELECT call_id FROM call_debug_logs dl
+          WHERE dl.call_id = c.id AND dl.event_type = 'llm_decision'
+            AND COALESCE((dl.data->'consecutive_same_phrase'->>'count')::int, 0) >= 2
+          LIMIT 1
+        ) loop_flag ON true
+        LEFT JOIN LATERAL (
+          SELECT call_id FROM call_debug_logs dl
+          WHERE dl.call_id = c.id AND dl.event_type = 'llm_decision'
+            AND COALESCE((dl.data->>'low_conf_counter_new')::int, 0) >= 2
+          LIMIT 1
+        ) lowconf_flag ON true
+        WHERE c.started_at > NOW() - INTERVAL '7 days'
       `),
       query<any>(`
         SELECT
@@ -79,7 +115,7 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
         ORDER BY total DESC LIMIT 15
       `)
     ]);
-    return { kpis, funnel, outcomes, companies };
+    return { kpis, funnel, guardRails, outcomes, companies };
   });
 
   // Paginated call list with per-call debug flags

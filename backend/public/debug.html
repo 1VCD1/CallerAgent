@@ -43,30 +43,66 @@
 </header>
 
 <!-- OVERVIEW TAB -->
-<div id="screen-overview" class="p-6 max-w-7xl mx-auto">
-  <!-- Funnel -->
-  <div class="bg-slate-800 rounded-lg p-5 mb-4">
-    <h3 class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-4">Call Funnel (7d)</h3>
-    <div id="funnel-row" class="grid grid-cols-4 gap-0">
-      <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
+<div id="screen-overview" class="p-6 max-w-5xl mx-auto space-y-5">
+
+  <!-- NORTH STAR -->
+  <div class="bg-slate-800 rounded-xl p-6" id="north-star">
+    <div class="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-1">North Star</div>
+    <div class="text-slate-300 text-sm mb-4">AI Performance Rate — when a human was reachable, did AI succeed?</div>
+    <div class="flex items-end gap-4 mb-3">
+      <div id="ns-value" class="text-6xl font-bold text-emerald-400">—</div>
+      <div id="ns-sub" class="text-slate-500 text-sm pb-2"></div>
     </div>
-    <div id="funnel-rates" class="mt-3"></div>
-  </div>
-  <!-- Latency cards + Outcomes + Companies -->
-  <div class="grid grid-cols-2 gap-4 mb-4" id="kpi-row">
-    <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
-    <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-24"></div>
-  </div>
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div class="bg-slate-800 rounded-lg p-4">
-      <h3 class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3">Outcomes (7d)</h3>
-      <div id="outcomes-chart" class="space-y-2"></div>
-    </div>
-    <div class="bg-slate-800 rounded-lg p-4">
-      <h3 class="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3">Companies (7d)</h3>
-      <div id="companies-table" class="scroll-area" style="max-height:300px"></div>
+    <div class="bg-slate-700 rounded-full h-3 overflow-hidden w-full max-w-lg">
+      <div id="ns-bar" class="h-full rounded-full transition-all duration-700" style="width:0%"></div>
     </div>
   </div>
+
+  <!-- SECONDARY METRICS -->
+  <div>
+    <div class="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Secondary</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="secondary-row">
+      <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
+      <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
+      <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
+      <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
+    </div>
+  </div>
+
+  <!-- GUARD RAILS -->
+  <div>
+    <div class="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Guard Rails</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="guardrail-row">
+      <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
+      <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
+      <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
+      <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
+    </div>
+  </div>
+
+  <!-- DEEP DIVE -->
+  <div>
+    <div class="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Deep Dive</div>
+    <!-- Funnel -->
+    <div class="bg-slate-800 rounded-lg p-4 mb-3">
+      <div class="text-slate-400 text-xs font-semibold mb-3">Call Funnel (7d)</div>
+      <div id="funnel-row" class="grid grid-cols-4 gap-0">
+        <div class="animate-pulse h-16 bg-slate-700 rounded"></div>
+      </div>
+      <div id="funnel-rates" class="mt-2"></div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div class="bg-slate-800 rounded-lg p-4">
+        <div class="text-slate-400 text-xs font-semibold mb-3">Outcomes (7d)</div>
+        <div id="outcomes-chart" class="space-y-2"></div>
+      </div>
+      <div class="bg-slate-800 rounded-lg p-4">
+        <div class="text-slate-400 text-xs font-semibold mb-3">Companies (7d)</div>
+        <div id="companies-table" class="scroll-area" style="max-height:280px"></div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- CALLS TAB -->
@@ -179,11 +215,86 @@ async function api(path) {
 // ─── Overview ─────────────────────────────────────────────────────────────────
 async function loadOverview() {
   const data = await api('/debug/overview');
+  renderNorthStar(data.funnel);
+  renderSecondary(data.kpis, data.funnel);
+  renderGuardRails(data.guardRails, data.kpis);
   renderFunnel(data.funnel);
-  renderKpis(data.kpis);
   renderOutcomes(data.outcomes);
   renderCompanies(data.companies);
   document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+function renderNorthStar(f) {
+  if (!f) return;
+  const navigable    = parseInt(f.navigable)    || 0;
+  const humanReached = parseInt(f.human_reached) || 0;
+  const rate = navigable ? Math.round(humanReached / navigable * 100) : null;
+  const color = rate === null ? '#94a3b8' : rate >= 60 ? '#10b981' : rate >= 35 ? '#f59e0b' : '#ef4444';
+
+  document.getElementById('ns-value').textContent = rate !== null ? rate + '%' : '—';
+  document.getElementById('ns-value').style.color = color;
+  document.getElementById('ns-bar').style.width = (rate ?? 0) + '%';
+  document.getElementById('ns-bar').style.background = color;
+  document.getElementById('ns-sub').textContent =
+    rate !== null ? `${humanReached} of ${navigable} navigable calls (7d)` : 'No data yet';
+}
+
+function renderSecondary(k, f) {
+  const initiated    = parseInt(f?.initiated)    || 0;
+  const connected    = parseInt(f?.connected)    || 0;
+  const connRate     = initiated ? Math.round(connected / initiated * 100) : null;
+  const connColor    = !connRate ? '' : connRate >= 85 ? 'text-emerald-400' : connRate >= 70 ? 'text-amber-400' : 'text-red-400';
+
+  const avgTime      = k?.avg_time_to_human_secs ? parseInt(k.avg_time_to_human_secs) : null;
+  const latColor     = !k?.avg_latency_ms ? '' : k.avg_latency_ms <= 500 ? 'text-emerald-400' : k.avg_latency_ms <= 1000 ? 'text-amber-400' : 'text-red-400';
+
+  document.getElementById('secondary-row').innerHTML = `
+    ${secCard('Connection Rate', connRate !== null ? connRate + '%' : '—', connColor,
+      `${connected} of ${initiated} calls connected`)}
+    ${secCard('Avg Time to Human', avgTime ? fmtSecs(avgTime) : '—', 'text-blue-400',
+      'when AI succeeded')}
+    ${secCard('Call Volume', (f?.initiated ?? '—') + ' calls', 'text-slate-200',
+      `${k?.calls_24h ?? 0} in last 24h`)}
+    ${secCard('Prefetch Rate', k?.prefetch_pct != null ? k.prefetch_pct + '%' : '—',
+      k?.prefetch_pct >= 60 ? 'text-emerald-400' : 'text-amber-400', 'AI decision reuse')}
+  `;
+}
+
+function secCard(label, value, color, sub) {
+  return `<div class="bg-slate-800 rounded-lg p-4">
+    <div class="text-slate-500 text-xs mb-1">${label}</div>
+    <div class="text-xl font-bold ${color}">${value}</div>
+    <div class="text-slate-600 text-xs mt-0.5">${sub}</div>
+  </div>`;
+}
+
+function renderGuardRails(g, k) {
+  const loopPct    = g?.phrase_loop_pct    != null ? parseInt(g.phrase_loop_pct)    : null;
+  const lowPct     = g?.low_conf_pct       != null ? parseInt(g.low_conf_pct)       : null;
+  const latMs      = k?.avg_latency_ms     != null ? parseInt(k.avg_latency_ms)     : null;
+  const cbId       = g?.callback_caller_id_count != null ? parseInt(g.callback_caller_id_count) : null;
+
+  const rail = (label, value, display, warn, crit, unit = '') => {
+    const v = value ?? -1;
+    const status = v < 0 ? 'text-slate-500' : v >= crit ? 'text-red-400' : v >= warn ? 'text-amber-400' : 'text-emerald-400';
+    const dot    = v < 0 ? '⚪' : v >= crit ? '🔴' : v >= warn ? '🟡' : '🟢';
+    return `<div class="bg-slate-800 rounded-lg p-4">
+      <div class="text-slate-500 text-xs mb-1">${label}</div>
+      <div class="text-xl font-bold ${status}">${display}${unit}</div>
+      <div class="text-slate-600 text-xs mt-0.5">${dot} threshold: ${warn}${unit} / ${crit}${unit}</div>
+    </div>`;
+  };
+
+  document.getElementById('guardrail-row').innerHTML = `
+    ${rail('Phrase Loops', loopPct, loopPct ?? '—', 15, 30, '%')}
+    ${rail('Low Confidence', lowPct,  lowPct ?? '—',  10, 25, '%')}
+    ${rail('Avg LLM Latency', latMs, latMs ? latMs + 'ms' : '—', 800, 1500)}
+    ${rail('Caller-ID Callbacks', cbId, cbId ?? '—', 1, 5, '')}
+  `;
+}
+
+function renderKpis(k) {
+  // Legacy — kept for funnel-rates sub-render
 }
 
 function renderFunnel(f) {
@@ -595,14 +706,35 @@ function renderTurn(turn, n) {
   const d = turn.debug;
   const color = d ? (actionColors[d.action] ?? '#6b7280') : '#475569';
 
-  // IVR section
+  // IVR section — show human confidence prominently for each utterance
   const ivrLines = turn.ivr.map(t => {
-    const trunc = t.text.length < 40 && (t.text.endsWith(',') || /\d,$/.test(t.text) || t.text.endsWith('press'));
-    return `<div class="text-slate-200 text-sm leading-relaxed">"${t.text}"${trunc ? ' <span class="badge bg-amber-900 text-amber-300 ml-1" title="Possibly truncated by speechTimeout">TRUNC?</span>' : ''}</div>`;
+    const trunc    = t.text.length < 40 && (t.text.endsWith(',') || /\d,$/.test(t.text) || t.text.endsWith('press'));
+    const hconf    = t.human_confidence != null ? Math.round(t.human_confidence * 100) : null;
+    const hColor   = hconf === null ? '#475569'
+                   : hconf >= 75   ? '#ef4444'
+                   : hconf >= 40   ? '#f59e0b'
+                   : '#10b981';
+    const hLabel   = hconf === null ? ''
+                   : hconf >= 75   ? '🔴 High — should have escalated?'
+                   : hconf >= 40   ? '🟡 Ambiguous — borderline human signal'
+                   : '🟢 Low — clearly IVR';
+    const confBlock = hconf !== null ? `
+      <div class="flex items-center gap-2 mt-1.5">
+        <span class="text-slate-500 text-xs w-28 shrink-0">Human confidence</span>
+        <div class="flex-1 bg-slate-700 rounded-full h-2 max-w-xs overflow-hidden">
+          <div style="width:${hconf}%;background:${hColor}" class="h-full rounded-full transition-all duration-500"></div>
+        </div>
+        <span class="text-xs font-semibold" style="color:${hColor}">${hconf}%</span>
+        <span class="text-slate-600 text-xs">${hLabel}</span>
+      </div>` : '';
+    return `<div class="mb-2 last:mb-0">
+      <div class="text-slate-200 text-sm leading-relaxed">"${t.text}"${trunc ? ' <span class="badge bg-amber-900 text-amber-300 ml-1">TRUNC?</span>' : ''}</div>
+      ${confBlock}
+    </div>`;
   }).join('');
 
   const menuKeys = d?.available_menu_keys?.length
-    ? `<div class="mt-1.5 flex items-center gap-1.5 flex-wrap">
+    ? `<div class="mt-2 flex items-center gap-1.5 flex-wrap">
         <span class="text-slate-500 text-xs">Valid keys:</span>
         ${d.available_menu_keys.map(k => `<span class="badge bg-slate-700 text-slate-300">${k}</span>`).join('')}
        </div>`
@@ -610,7 +742,7 @@ function renderTurn(turn, n) {
 
   const ivrSection = turn.ivr.length
     ? `<div class="border-b border-slate-700 px-4 py-3 bg-slate-900/50">
-        <div class="text-slate-500 text-xs font-semibold mb-1.5">IVR</div>
+        <div class="text-slate-500 text-xs font-semibold mb-2">IVR</div>
         ${ivrLines}
         ${menuKeys}
        </div>`
@@ -656,7 +788,7 @@ function renderTurn(turn, n) {
           <div class="conf-track w-20"><div class="conf-fill" style="width:${confPct}%;background:${confBg}"></div></div>
           ${d.latency_ms ? `<span class="text-slate-500 text-xs ml-1">${d.latency_ms}ms</span>` : ''}
           ${d.decision_source === 'prefetch' ? '<span class="badge bg-emerald-900 text-emerald-300 text-xs">pre-fetched</span>' : ''}
-          ${hconfPct > 5 ? `<span class="text-amber-400 text-xs ml-1">human: ${hconfPct}%</span>` : ''}
+          ${hconfPct > 5 ? `<span class="font-bold text-sm ml-1" style="color:${hconfPct>=75?'#ef4444':hconfPct>=40?'#f59e0b':'#f97316'}">human: ${hconfPct}%</span>` : ''}
         </div>
 
         ${d.reasoning ? `<div class="text-slate-200 text-sm leading-relaxed bg-slate-700/40 rounded-md px-3 py-2 mb-2">${d.reasoning}</div>` : ''}
