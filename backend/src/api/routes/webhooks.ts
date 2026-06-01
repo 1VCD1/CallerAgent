@@ -448,11 +448,12 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       }
 
       // Save AI action as transcript entry using the ACTUAL executed action (safeAction)
+      const al = langConfig.actionLabels;
       const actionText = safeAction === 'say_phrase'        ? safeValue ?? ''
-                       : safeAction === 'press_key'         ? `[按鍵 ${safeValue}]`
-                       : safeAction === 'wait'              ? `[等待 ${safeValue ?? ''}s]`
-                       : safeAction === 'end_call'          ? `[結束通話]`
-                       : safeAction === 'escalate_to_user'  ? `[轉接給使用者]`
+                       : safeAction === 'press_key'         ? al.pressKey(safeValue ?? '')
+                       : safeAction === 'wait'              ? al.wait(safeValue ?? '')
+                       : safeAction === 'end_call'          ? al.endCall
+                       : safeAction === 'escalate_to_user'  ? al.escalate
                        : `[${safeAction}]`;
       await query(
         `INSERT INTO transcripts (call_id, speaker, text) VALUES ($1, 'AI', $2)`,
