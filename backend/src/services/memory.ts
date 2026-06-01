@@ -144,6 +144,36 @@ function normalizeIvr(text: string): string {
     .slice(0, 120);
 }
 
+// For DTMF menus: extract sorted (key→label) pairs as a stable fingerprint
+// regardless of what's cut off at the beginning or end of the transcript.
+// Returns null if fewer than 2 DTMF options are detected (not clearly a menu).
+function extractDtmfFingerprint(text: string): string | null {
+  const wordToDigit: Record<string, string> = {
+    one:'1', two:'2', three:'3', four:'4', five:'5',
+    six:'6', seven:'7', eight:'8', nine:'9', zero:'0',
+  };
+  const matches = [...text.matchAll(
+    /press\s+(\d|one|two|three|four|five|six|seven|eight|nine|zero)\s+(?:for\s+)?([a-z][a-z\s]{2,25}?)(?=[,.]|\s+(?:press|or|and)|$)/gi
+  )];
+  if (matches.length < 2) return null;
+  const options = matches.map(m => {
+    const key   = wordToDigit[m[1].toLowerCase()] ?? m[1];
+    const label = m[2].toLowerCase().trim().split(/\s+/).slice(0, 2).join('_');
+    return `${key}:${label}`;
+  }).sort().join('|');
+  return `menu:${options}`;
+}
+
+// Jaccard word overlap: fraction of shared meaningful words (length > 3).
+// Handles partial transcriptions — if one is a substring of the other, similarity is high.
+function jaccardWords(a: string, b: string): number {
+  const sig = (s: string) => new Set(s.split(/\s+/).filter(w => w.length > 3));
+  const wA = sig(a), wB = sig(b);
+  const intersection = [...wA].filter(w => wB.has(w)).length;
+  const union = new Set([...wA, ...wB]).size;
+  return union > 0 ? intersection / union : 0;
+}
+
 export async function recordIvrDecisionNodes(params: {
   callId: string;
   company: string;
@@ -160,10 +190,36 @@ export async function recordIvrDecisionNodes(params: {
     ['callback_number_given', 'callback_offered'].includes(params.endedReason ?? '');
   const successDelta = success ? 1 : 0;
 
+  // Fetch existing nodes once per call for similarity matching
+  const existingNodes = await query<{ ivr_text: string; ai_action: string; ai_value: string }>(
+    `SELECT ivr_text, ai_action, ai_value FROM ivr_decision_nodes WHERE LOWER(company) = LOWER($1)`,
+    [params.company]
+  );
+
   for (const { data } of decisions) {
     if (!data.ivr_utterance || !data.action) continue;
-    const ivrKey = normalizeIvr(data.ivr_utterance);
-    const aiValue = data.value ?? '';
+
+    const normalized = normalizeIvr(data.ivr_utterance);
+    const aiValue    = data.value ?? '';
+
+    // Strategy 1: DTMF fingerprint (stable key, unaffected by partial transcription)
+    const dtmfKey = extractDtmfFingerprint(normalized);
+
+    let ivrKey: string;
+    if (dtmfKey) {
+      ivrKey = dtmfKey;
+    } else {
+      // Strategy 2: find the most similar existing node (same action+value) via Jaccard
+      const candidates = existingNodes.filter(
+        n => n.ai_action === data.action && n.ai_value === aiValue
+      );
+      const best = candidates
+        .map(n => ({ text: n.ivr_text, sim: jaccardWords(normalized, n.ivr_text) }))
+        .filter(n => n.sim > 0.55)
+        .sort((a, b) => b.sim - a.sim)[0];
+
+      ivrKey = best ? best.text : normalized;
+    }
 
     await query(
       `INSERT INTO ivr_decision_nodes
