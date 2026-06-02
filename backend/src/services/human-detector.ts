@@ -149,10 +149,6 @@ export function detectHumanCombined(
   };
 }
 
-// Legacy keyword-only detector (kept for backward compatibility)
-export function detectHuman(transcript: string): HumanDetectionResult {
-  return detectHumanCombined(transcript, null);
-}
 
 export function isHoldMusic(transcript: string): boolean {
   return transcript.trim().length < 10 && !transcript.match(/[a-z]{3,}/i);
