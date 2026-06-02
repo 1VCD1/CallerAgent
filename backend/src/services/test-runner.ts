@@ -191,6 +191,13 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
   };
 }
 
+export async function getLastTestedCommit(): Promise<string | null> {
+  const row = await queryOne<{ commit_sha: string | null }>(
+    `SELECT commit_sha FROM test_runs WHERE ended_at IS NOT NULL ORDER BY ended_at DESC LIMIT 1`
+  );
+  return row?.commit_sha ?? null;
+}
+
 export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
   const scenarios = await query<{
     id: string; name: string; company: string; goal: string;
@@ -200,9 +207,13 @@ export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
 
   if (scenarios.length === 0) return 'no_scenarios';
 
+  const commitSha = process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ?? null;
+  const commitMsg = process.env.RAILWAY_GIT_COMMIT_MESSAGE?.split('\n')[0].slice(0, 120) ?? null;
+
   const runRow = await queryOne<{ id: string }>(
-    `INSERT INTO test_runs (triggered_by, total_scenarios) VALUES ($1, $2) RETURNING id`,
-    [triggeredBy, scenarios.length]
+    `INSERT INTO test_runs (triggered_by, commit_sha, commit_message, total_scenarios)
+     VALUES ($1, $2, $3, $4) RETURNING id`,
+    [triggeredBy, commitSha, commitMsg, scenarios.length]
   );
   const runId = runRow!.id;
 

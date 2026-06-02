@@ -293,6 +293,21 @@ async function bootstrap() {
 
   await fastify.listen({ port: config.port, host: '0.0.0.0' });
   console.log(`Server running on port ${config.port}`);
+
+  // Auto-run tests on new deploy (only if commit SHA changed)
+  const currentSha = process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ?? null;
+  if (currentSha) {
+    const { getLastTestedCommit, runAllTests } = await import('./services/test-runner');
+    const lastSha = await getLastTestedCommit();
+    if (lastSha !== currentSha) {
+      console.log(`[TestRunner] New deploy detected (${lastSha ?? 'none'} → ${currentSha}) — auto-running tests in 30s`);
+      setTimeout(() => {
+        runAllTests('deploy').catch(err => console.error('[TestRunner] Auto-run failed:', err));
+      }, 30_000); // 30s delay so server is fully warmed up
+    } else {
+      console.log(`[TestRunner] Same commit ${currentSha} — skipping auto-run`);
+    }
+  }
 }
 
 bootstrap().catch((err) => {

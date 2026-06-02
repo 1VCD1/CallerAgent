@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CallerAgent Debug</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif; }
     .conf-track { height:5px; background:#334155; border-radius:3px; overflow:hidden; min-width:60px }
@@ -203,9 +204,37 @@
     </div>
   </div>
 
-  <!-- Run history -->
+  <!-- Accuracy over deploys chart -->
+  <div class="bg-slate-800 rounded-lg p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-slate-400 text-xs font-semibold">Accuracy Over Time</div>
+        <div class="text-slate-600 text-xs mt-0.5">Each point = one deploy. Hover for commit message.</div>
+      </div>
+    </div>
+    <div style="height:200px; position:relative">
+      <canvas id="accuracy-chart"></canvas>
+    </div>
+  </div>
+
+  <!-- Auto-generate from real call -->
+  <div class="bg-slate-800 rounded-lg p-4 mb-4">
+    <div class="text-slate-400 text-xs font-semibold mb-2">Generate Test from Real Call</div>
+    <div class="text-slate-500 text-xs mb-3">Paste a call ID from Call Log — GPT-4o will reconstruct the IVR persona and add it as a test scenario.</div>
+    <div class="flex gap-2">
+      <input id="gen-call-id" type="text" placeholder="Call ID (UUID)"
+        class="flex-1 bg-slate-700 border border-slate-600 text-slate-100 text-xs rounded px-3 py-2 focus:outline-none focus:border-blue-500 font-mono" />
+      <button onclick="generateScenario()" id="gen-btn"
+        class="bg-slate-600 hover:bg-slate-500 text-white text-xs px-4 py-2 rounded font-medium transition-colors">
+        Generate
+      </button>
+    </div>
+    <div id="gen-status" class="text-slate-500 text-xs mt-2"></div>
+  </div>
+
+  <!-- Run history table -->
   <div class="bg-slate-800 rounded-lg p-4">
-    <div class="text-slate-400 text-xs font-semibold mb-3">Run History</div>
+    <div class="text-slate-400 text-xs font-semibold mb-3">Deploy History</div>
     <div id="test-run-history" class="space-y-1">
       <div class="text-slate-600 text-xs">No history yet.</div>
     </div>
@@ -1428,20 +1457,121 @@ function renderTestResults(data) {
   }).join('');
 }
 
+let _accuracyChart = null;
+
 function renderRunHistory(runs) {
   if (!runs?.length) return;
+
+  // Table
   document.getElementById('test-run-history').innerHTML = runs.map(r => {
     const pct = v => v != null ? Math.round(v * 100) + '%' : '—';
     const color = r.accuracy >= 0.8 ? 'text-emerald-400' : r.accuracy >= 0.5 ? 'text-amber-400' : 'text-red-400';
-    return `<div class="flex items-center gap-3 text-xs border-b border-slate-700/50 py-1.5">
-      <span class="text-slate-600 w-24 shrink-0">${relTime(r.started_at)}</span>
-      <span class="font-bold ${color}">${pct(r.accuracy)}</span>
-      <span class="text-slate-500">${r.passed}/${r.total_scenarios} passed</span>
-      <span class="text-slate-600">human: ${pct(r.human_detection_rate)}</span>
-      <span class="text-slate-600">FP: ${pct(r.false_positive_rate)}</span>
-      <span class="text-slate-600 ml-auto">${r.avg_turns?.toFixed(1)} avg turns</span>
+    const trigger = r.triggered_by === 'deploy' ? '[deploy]' : '[manual]';
+    const sha = r.commit_sha ? `<span class="font-mono text-slate-600">${r.commit_sha}</span>` : '';
+    const msg = r.commit_message ? `<span class="text-slate-500 truncate max-w-xs" title="${r.commit_message}">${r.commit_message.slice(0,50)}${r.commit_message.length>50?'…':''}</span>` : '';
+    return `<div class="flex items-center gap-2 text-xs border-b border-slate-700/50 py-1.5 flex-wrap">
+      <span class="text-slate-600 w-20 shrink-0">${relTime(r.started_at)}</span>
+      <span class="font-bold ${color} w-10">${pct(r.accuracy)}</span>
+      <span class="text-slate-500">${r.passed}/${r.total_scenarios}</span>
+      <span class="text-slate-600">H:${pct(r.human_detection_rate)}</span>
+      <span class="text-slate-600">FP:${pct(r.false_positive_rate)}</span>
+      <span class="text-slate-700 text-xs">${trigger}</span>
+      ${sha}${msg}
     </div>`;
   }).join('');
+
+  // Chart — chronological order (oldest first)
+  const ordered = [...runs].reverse();
+  const labels = ordered.map((r, i) => {
+    const sha = r.commit_sha ?? `run${i+1}`;
+    return sha;
+  });
+  const tooltips = ordered.map(r =>
+    (r.commit_message ?? 'manual run') + '\n' + new Date(r.started_at).toLocaleString()
+  );
+  const pctVal = v => v != null ? Math.round(v * 100) : null;
+
+  const ctx = document.getElementById('accuracy-chart');
+  if (_accuracyChart) _accuracyChart.destroy();
+  _accuracyChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Overall Accuracy',
+          data: ordered.map(r => pctVal(r.accuracy)),
+          borderColor: '#3b82f6', backgroundColor: '#3b82f620',
+          pointRadius: 5, tension: 0.2, fill: false,
+        },
+        {
+          label: 'Human Detection',
+          data: ordered.map(r => pctVal(r.human_detection_rate)),
+          borderColor: '#10b981', backgroundColor: '#10b98120',
+          pointRadius: 5, tension: 0.2, fill: false,
+        },
+        {
+          label: 'False Positive',
+          data: ordered.map(r => pctVal(r.false_positive_rate)),
+          borderColor: '#ef4444', backgroundColor: '#ef444420',
+          pointRadius: 5, tension: 0.2, fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: '#64748b', font: { family: 'monospace', size: 10 } }, grid: { color: '#1e293b' } },
+        y: { min: 0, max: 100, ticks: { color: '#64748b', callback: v => v + '%' }, grid: { color: '#1e293b' } },
+      },
+      plugins: {
+        legend: { labels: { color: '#94a3b8', boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          callbacks: {
+            title: items => tooltips[items[0].dataIndex] ?? labels[items[0].dataIndex],
+            label: item => `${item.dataset.label}: ${item.raw ?? '—'}%`,
+          },
+        },
+      },
+    },
+  });
+}
+
+async function generateScenario() {
+  const callId = document.getElementById('gen-call-id').value.trim();
+  if (!callId) return;
+  const btn = document.getElementById('gen-btn');
+  const status = document.getElementById('gen-status');
+  btn.disabled = true; btn.textContent = 'Generating...';
+  status.textContent = 'Fetching call data...';
+  try {
+    const data = await api(`/debug/calls/${callId}`);
+    if (data.error) { status.textContent = 'Call not found.'; return; }
+
+    status.textContent = 'Asking GPT-4o to reconstruct IVR persona...';
+    const transcript = (data.transcripts ?? [])
+      .map(t => `${t.speaker}: ${t.text}`).join('\n');
+    const outcome = data.call.ended_reason ?? data.call.status;
+    const hasHuman = !!data.call.human_reached;
+
+    const resp = await fetch('/debug/test/generate-scenario', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ callId, transcript, company: data.call.company,
+        goal: data.call.goal, outcome, hasHuman }),
+    });
+    const result = await resp.json();
+    if (result.id) {
+      status.textContent = `Created: "${result.name}"`;
+      document.getElementById('gen-call-id').value = '';
+    } else {
+      status.textContent = 'Error: ' + JSON.stringify(result);
+    }
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Generate';
+  }
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────

@@ -1,6 +1,10 @@
 import { FastifyPluginAsync } from 'fastify';
 import { query, queryOne } from '../../db/client';
 import { runAllTests } from '../../services/test-runner';
+import OpenAI from 'openai';
+import { config } from '../../config';
+
+const openai = new OpenAI({ apiKey: config.openai.apiKey });
 
 const debugPlugin: FastifyPluginAsync = async (fastify) => {
 
@@ -341,10 +345,39 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
 
   // Trigger a test run (async — returns runId immediately, run happens in background)
   fastify.post('/debug/test/run', async () => {
-    const runId = runAllTests('manual').catch(err =>
-      console.error('[TestRunner] Run failed:', err)
-    );
+    runAllTests('manual').catch(err => console.error('[TestRunner] Run failed:', err));
     return { status: 'started' };
+  });
+
+  // Auto-generate a test scenario from a real call transcript
+  fastify.post('/debug/test/generate-scenario', async (request) => {
+    const { callId, transcript, company, goal, outcome, hasHuman } = request.body as any;
+
+    const resp = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      max_tokens: 600,
+      messages: [{
+        role: 'system',
+        content: `You are helping build an IVR test scenario database. Given a real phone call transcript, write a concise IVR persona description that can be used to simulate this call in a test. The persona should describe the IVR flow step by step so a simulator LLM can replay it interactively. Keep it under 400 words. Output JSON only: {"name": "...", "ivr_persona": "..."}`
+      }, {
+        role: 'user',
+        content: `Company: ${company}\nGoal: ${goal}\nActual outcome: ${outcome}\nHas human at end: ${hasHuman}\n\nTranscript:\n${transcript.slice(0, 3000)}`
+      }],
+      response_format: { type: 'json_object' },
+    });
+
+    const generated = JSON.parse(resp.choices[0]?.message?.content ?? '{}');
+    return queryOne<any>(
+      `INSERT INTO test_scenarios (name, company, goal, ivr_persona, expected_outcome, has_human, max_turns, tags)
+       VALUES ($1, $2, $3, $4, $5, $6, 20, $7) RETURNING *`,
+      [
+        generated.name ?? `${company} — ${outcome}`,
+        company, goal ?? 'reach_human',
+        generated.ivr_persona ?? '',
+        outcome, hasHuman,
+        [`auto-generated`, `call:${callId.slice(0,8)}`],
+      ]
+    );
   });
 
   // List past runs

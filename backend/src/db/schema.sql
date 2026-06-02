@@ -129,6 +129,8 @@ CREATE TABLE IF NOT EXISTS test_scenarios (
 CREATE TABLE IF NOT EXISTS test_runs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   triggered_by TEXT DEFAULT 'manual',
+  commit_sha TEXT,                  -- git commit SHA (from RAILWAY_GIT_COMMIT_SHA)
+  commit_message TEXT,              -- git commit message (from RAILWAY_GIT_COMMIT_MESSAGE)
   total_scenarios INTEGER NOT NULL DEFAULT 0,
   passed INTEGER NOT NULL DEFAULT 0,
   failed INTEGER NOT NULL DEFAULT 0,
@@ -139,6 +141,8 @@ CREATE TABLE IF NOT EXISTS test_runs (
   started_at TIMESTAMPTZ DEFAULT NOW(),
   ended_at TIMESTAMPTZ
 );
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS commit_sha TEXT;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS commit_message TEXT;
 
 CREATE TABLE IF NOT EXISTS test_results (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
