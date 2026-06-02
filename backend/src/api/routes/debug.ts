@@ -123,6 +123,114 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
     return { kpis, funnel, guardRails, outcomes, companies };
   });
 
+  // Detection quality: false positives and false negatives based on user feedback
+  fastify.get('/debug/detection-quality', async () => {
+    const [summary, falsePosRows, falseNegRows] = await Promise.all([
+      queryOne<any>(`
+        SELECT
+          COUNT(*) FILTER (WHERE human_reached = true  AND user_confirmed = false)              AS false_positives,
+          COUNT(*) FILTER (WHERE human_reached = false AND user_confirmed = true)               AS false_negatives,
+          COUNT(*) FILTER (WHERE human_reached = true  AND user_confirmed IS DISTINCT FROM false) AS true_positives,
+          COUNT(*) FILTER (WHERE user_confirmed IS NOT NULL)                                    AS with_feedback,
+          COUNT(*)                                                                               AS total
+        FROM calls
+        WHERE started_at > NOW() - INTERVAL '30 days'
+      `),
+      // False positives: AI thought human, user said no — show what IVR said
+      query<any>(`
+        SELECT
+          c.id, c.company, c.started_at, c.human_confidence,
+          c.ended_reason,
+          (SELECT text FROM transcripts
+           WHERE call_id = c.id AND speaker = 'IVR'
+           ORDER BY timestamp DESC LIMIT 1) AS last_ivr_text,
+          (SELECT text FROM transcripts
+           WHERE call_id = c.id AND speaker = 'IVR' AND human_confidence IS NOT NULL
+           ORDER BY human_confidence DESC LIMIT 1) AS highest_conf_ivr_text
+        FROM calls c
+        WHERE c.human_reached = true AND c.user_confirmed = false
+          AND c.started_at > NOW() - INTERVAL '30 days'
+        ORDER BY c.started_at DESC
+        LIMIT 20
+      `),
+      // False negatives: AI missed human, user confirmed
+      query<any>(`
+        SELECT
+          c.id, c.company, c.started_at, c.ended_reason,
+          MAX(t.human_confidence) AS max_human_conf_seen,
+          (SELECT text FROM transcripts t2
+           WHERE t2.call_id = c.id AND t2.speaker = 'IVR' AND t2.human_confidence IS NOT NULL
+           ORDER BY t2.human_confidence DESC LIMIT 1) AS closest_human_text
+        FROM calls c
+        LEFT JOIN transcripts t ON t.call_id = c.id
+        WHERE c.human_reached = false AND c.user_confirmed = true
+          AND c.started_at > NOW() - INTERVAL '30 days'
+        GROUP BY c.id, c.company, c.started_at, c.ended_reason
+        ORDER BY c.started_at DESC
+        LIMIT 20
+      `)
+    ]);
+    return { summary, falsePosRows, falseNegRows };
+  });
+
+  // Memory tab: companies with any learning data
+  fastify.get('/debug/memory', async () => {
+    const [patterns, nodes] = await Promise.all([
+      query<any>(`
+        SELECT company, COUNT(*) AS patterns,
+               ROUND(MAX(success_rate) * 100) AS best_success_rate,
+               MAX(updated_at) AS last_updated
+        FROM memory_patterns GROUP BY company ORDER BY patterns DESC
+      `),
+      query<any>(`SELECT company, COUNT(*) AS nodes FROM ivr_decision_nodes GROUP BY company`),
+    ]);
+
+    const map = new Map<string, any>();
+    for (const p of patterns) {
+      map.set(p.company.toLowerCase(), {
+        company: p.company,
+        patterns: parseInt(p.patterns),
+        nodes: 0,
+        bestSuccessRate: parseInt(p.best_success_rate ?? 0),
+        lastUpdated: p.last_updated,
+      });
+    }
+    for (const n of nodes) {
+      const key = n.company.toLowerCase();
+      const existing = map.get(key);
+      if (existing) existing.nodes = parseInt(n.nodes);
+      else map.set(key, { company: n.company, patterns: 0, nodes: parseInt(n.nodes), bestSuccessRate: 0 });
+    }
+    return [...map.values()].sort((a, b) => (b.patterns + b.nodes) - (a.patterns + a.nodes));
+  });
+
+  // Per-company: all 3 learning layers
+  fastify.get('/debug/memory/:company', async (request) => {
+    const { company } = request.params as { company: string };
+    const [patterns, nodes, ivrNote, userNotes] = await Promise.all([
+      query<any>(`
+        SELECT path, success_rate, sample_count, avg_wait_seconds, last_verified_at
+        FROM memory_patterns WHERE LOWER(company) = LOWER($1)
+        ORDER BY success_rate DESC, sample_count DESC
+      `, [company]),
+      query<any>(`
+        SELECT ivr_text, ai_action, ai_value, calls_success, calls_total,
+               ROUND(calls_success::numeric / NULLIF(calls_total, 0) * 100) AS success_pct,
+               last_seen_at
+        FROM ivr_decision_nodes WHERE LOWER(company) = LOWER($1)
+        ORDER BY calls_total DESC LIMIT 60
+      `, [company]),
+      queryOne<any>(`
+        SELECT summary, outcome, updated_at FROM company_ivr_notes
+        WHERE LOWER(company) = LOWER($1) ORDER BY updated_at DESC LIMIT 1
+      `, [company]),
+      query<any>(`
+        SELECT note, updated_at FROM user_company_notes WHERE LOWER(company) = LOWER($1)
+      `, [company]),
+    ]);
+    return { patterns, nodes, ivrNote, userNotes };
+  });
+
   // Paginated call list with per-call debug flags
   fastify.get('/debug/calls', async (request) => {
     const { company = '', outcome = '', limit = '60' } = request.query as Record<string, string>;

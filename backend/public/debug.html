@@ -38,6 +38,7 @@
   <nav class="flex gap-1 ml-2">
     <button id="tab-overview" class="tab-btn active" onclick="showTab('overview')">Overview</button>
     <button id="tab-calls"    class="tab-btn"        onclick="showTab('calls')">Call Log</button>
+    <button id="tab-memory"   class="tab-btn"        onclick="showTab('memory')">Memory</button>
   </nav>
   <div class="ml-auto text-slate-500 text-xs font-mono" id="last-updated"></div>
 </header>
@@ -91,8 +92,7 @@
   <!-- GUARD RAILS -->
   <div>
     <div class="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Guard Rails</div>
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="guardrail-row">
-      <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
+    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-2" id="guardrail-row">
       <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
       <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
       <div class="bg-slate-800 rounded-lg p-4 animate-pulse h-20"></div>
@@ -109,6 +109,17 @@
         <div class="animate-pulse h-16 bg-slate-700 rounded"></div>
       </div>
     </div>
+    <!-- Detection Quality -->
+    <div class="bg-slate-800 rounded-lg p-4 mb-3" id="detection-panel">
+      <div class="text-slate-400 text-xs font-semibold mb-3">Detection Quality (30d)</div>
+      <div class="grid grid-cols-3 gap-3 mb-4" id="detection-rate-cards">
+        <div class="bg-slate-700 rounded-lg p-3 animate-pulse h-16"></div>
+        <div class="bg-slate-700 rounded-lg p-3 animate-pulse h-16"></div>
+        <div class="bg-slate-700 rounded-lg p-3 animate-pulse h-16"></div>
+      </div>
+      <div id="detection-content" class="text-slate-500 text-sm">Loading…</div>
+    </div>
+
     <!-- Rate Gap Analysis -->
     <div class="bg-slate-800 rounded-lg p-4 mb-3" id="gap-panel" style="display:none">
       <div class="text-slate-400 text-xs font-semibold mb-3">Why Overall Rate &lt; AI Performance Rate?</div>
@@ -127,6 +138,23 @@
     </div>
   </div>
 
+</div>
+
+<!-- MEMORY TAB -->
+<div id="screen-memory" class="hidden p-6 max-w-7xl mx-auto">
+  <div class="flex gap-6">
+    <!-- Company list -->
+    <div class="w-56 shrink-0">
+      <div class="text-slate-500 text-xs font-semibold uppercase tracking-widest mb-2">Companies</div>
+      <div id="memory-company-list" class="space-y-1">
+        <div class="text-slate-600 text-sm animate-pulse">Loading…</div>
+      </div>
+    </div>
+    <!-- Detail panel -->
+    <div class="flex-1 min-w-0">
+      <div id="memory-detail" class="text-slate-500 text-sm">← Select a company</div>
+    </div>
+  </div>
 </div>
 
 <!-- CALLS TAB -->
@@ -206,10 +234,13 @@ function showTab(tab) {
   currentTab = tab;
   document.getElementById('tab-overview').classList.toggle('active', tab === 'overview');
   document.getElementById('tab-calls').classList.toggle('active', tab === 'calls');
+  document.getElementById('tab-memory').classList.toggle('active', tab === 'memory');
   document.getElementById('screen-overview').classList.toggle('hidden', tab !== 'overview');
   document.getElementById('screen-calls').classList.toggle('hidden', tab !== 'calls');
+  document.getElementById('screen-memory').classList.toggle('hidden', tab !== 'memory');
   document.getElementById('screen-detail').classList.add('hidden');
   if (tab === 'calls') loadCalls();
+  if (tab === 'memory') loadMemory();
 }
 
 function showDetail() {
@@ -241,12 +272,23 @@ async function loadOverview() {
   const data = await api('/debug/overview');
   renderNorthStar(data.funnel);
   renderSecondary(data.kpis, data.funnel);
-  renderGuardRails(data.guardRails, data.kpis);
+  renderGuardRails(data.guardRails, data.kpis, null);
   renderFunnel(data.funnel);
   renderGapAnalysis(data.funnel, data.outcomes);
   renderOutcomes(data.outcomes);
   renderCompanies(data.companies);
   document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+
+  // Load detection quality separately so a DB error here doesn't block the whole page
+  try {
+    const detectionData = await api('/debug/detection-quality');
+    renderGuardRails(data.guardRails, data.kpis, detectionData.summary);
+    renderDetectionQuality(detectionData);
+  } catch (e) {
+    document.getElementById('detection-rate-cards').innerHTML =
+      '<div class="text-red-400 text-xs col-span-3 py-1">Detection quality unavailable — ' + e.message + '</div>';
+    document.getElementById('detection-content').innerHTML = '';
+  }
 }
 
 function renderNorthStar(f) {
@@ -296,12 +338,11 @@ function secCard(label, value, color, sub) {
   </div>`;
 }
 
-function renderGuardRails(g, k) {
+function renderGuardRails(g, k, detection) {
   const hasDebug = parseInt(k?.debug_decision_count ?? '0') > 0;
   const loopPct  = hasDebug && g?.phrase_loop_pct    != null ? parseInt(g.phrase_loop_pct)    : null;
   const lowPct   = hasDebug && g?.low_conf_pct       != null ? parseInt(g.low_conf_pct)       : null;
   const latMs    = hasDebug && k?.avg_latency_ms     != null ? parseInt(k.avg_latency_ms)     : null;
-  const prefPct  = hasDebug && k?.prefetch_pct       != null ? parseInt(k.prefetch_pct)       : null;
   const cbId     = g?.callback_caller_id_count != null ? parseInt(g.callback_caller_id_count) : null;
 
   const rail = (label, value, display, warn, crit, unit = '') => {
@@ -319,15 +360,93 @@ function renderGuardRails(g, k) {
   };
 
   document.getElementById('guardrail-row').innerHTML = `
-    ${rail('Phrase Loops',       loopPct, loopPct ?? '—', 15, 30, '%')}
-    ${rail('Low Confidence',     lowPct,  lowPct  ?? '—', 10, 25, '%')}
-    ${rail('Avg LLM Latency',    latMs,   latMs ? latMs + 'ms' : '—', 800, 1500)}
-    ${rail('Caller-ID Callbacks', cbId,   cbId ?? '—', 1, 5)}
+    ${rail('Phrase Loops',        loopPct, loopPct ?? '—', 15, 30, '%')}
+    ${rail('Low Confidence',      lowPct,  lowPct  ?? '—', 10, 25, '%')}
+    ${rail('Avg LLM Latency',     latMs,   latMs ? latMs + 'ms' : '—', 800, 1500)}
+    ${rail('Caller-ID Callbacks', cbId,    cbId ?? '—', 1, 5)}
   `;
 }
 
-function renderKpis(k) {
-  // Legacy — kept for funnel-rates sub-render
+function renderDetectionQuality(detectionData) {
+  const { summary, falsePosRows, falseNegRows } = detectionData;
+  const withFeedback = parseInt(summary?.with_feedback ?? 0);
+  const fpCount      = parseInt(summary?.false_positives ?? 0);
+  const fnCount      = parseInt(summary?.false_negatives ?? 0);
+  const tpCount      = parseInt(summary?.true_positives  ?? 0);
+  const fpRate = (tpCount + fpCount) > 0 ? Math.round(fpCount / (tpCount + fpCount) * 100) : 0;
+  const fnRate = (tpCount + fnCount) > 0 ? Math.round(fnCount / (tpCount + fnCount) * 100) : 0;
+
+  const rateCard = (label, value, warn, crit, sub) => {
+    const status = value >= crit ? 'text-red-400' : value >= warn ? 'text-amber-400' : 'text-emerald-400';
+    const dot    = value >= crit ? '🔴' : value >= warn ? '🟡' : '🟢';
+    return `<div class="bg-slate-700 rounded-lg p-3">
+      <div class="text-slate-400 text-xs mb-1">${label}</div>
+      <div class="text-2xl font-bold ${status}">${value}%</div>
+      <div class="text-slate-500 text-xs mt-0.5">${dot} ${sub}</div>
+    </div>`;
+  };
+
+  document.getElementById('detection-rate-cards').innerHTML = `
+    ${rateCard('FP Rate', fpRate, 10, 25, 'AI said human, user denied')}
+    ${rateCard('FN Rate', fnRate, 10, 25, 'AI missed human, user confirmed')}
+    <div class="bg-slate-700 rounded-lg p-3">
+      <div class="text-slate-400 text-xs mb-1">User Feedback</div>
+      <div class="text-2xl font-bold text-slate-200">${withFeedback}</div>
+      <div class="text-slate-500 text-xs mt-0.5">${withFeedback === 0 ? 'AI assumed correct' : 'labelled calls'}</div>
+    </div>
+  `;
+
+  const fpSection = falsePosRows?.length
+    ? `<div class="mt-3">
+        <div class="text-red-400 text-xs font-semibold mb-2">🔴 False Positives (${fpCount}) — AI said human, user disagreed</div>
+        <table class="w-full text-xs">
+          <thead><tr class="text-slate-500 border-b border-slate-700/50">
+            <th class="text-left pb-1.5 pr-3">Company</th>
+            <th class="text-left pb-1.5 pr-3">AI conf</th>
+            <th class="text-left pb-1.5 pr-3">Ended</th>
+            <th class="text-left pb-1.5 pr-3">Highest-conf IVR text</th>
+            <th class="text-left pb-1.5">When</th>
+          </tr></thead>
+          <tbody>${falsePosRows.map(r => `
+            <tr class="border-b border-slate-700/30 row-hover" onclick="openDetail('${r.id}')">
+              <td class="py-1.5 pr-3 text-slate-300 font-medium">${r.company}</td>
+              <td class="py-1.5 pr-3 font-semibold ${r.human_confidence >= 0.75 ? 'text-red-400' : 'text-amber-400'}">${r.human_confidence != null ? Math.round(r.human_confidence * 100) + '%' : '—'}</td>
+              <td class="py-1.5 pr-3 text-slate-500">${r.ended_reason ?? '—'}</td>
+              <td class="py-1.5 pr-3 text-slate-400 max-w-xs truncate" title="${(r.highest_conf_ivr_text ?? r.last_ivr_text ?? '').replace(/"/g, '&quot;')}">${r.highest_conf_ivr_text ?? r.last_ivr_text ?? '—'}</td>
+              <td class="py-1.5 text-slate-600 whitespace-nowrap">${relTime(r.started_at)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`
+    : (fpCount > 0 ? `<div class="text-red-400 text-xs mt-2">🔴 ${fpCount} false positive(s) — no transcript rows available</div>` : '');
+
+  const fnSection = falseNegRows?.length
+    ? `<div class="mt-3">
+        <div class="text-amber-400 text-xs font-semibold mb-2">🟡 False Negatives (${fnCount}) — AI missed human, user confirmed one was reached</div>
+        <table class="w-full text-xs">
+          <thead><tr class="text-slate-500 border-b border-slate-700/50">
+            <th class="text-left pb-1.5 pr-3">Company</th>
+            <th class="text-left pb-1.5 pr-3">Max conf seen</th>
+            <th class="text-left pb-1.5 pr-3">Ended</th>
+            <th class="text-left pb-1.5 pr-3">Closest human text</th>
+            <th class="text-left pb-1.5">When</th>
+          </tr></thead>
+          <tbody>${falseNegRows.map(r => `
+            <tr class="border-b border-slate-700/30 row-hover" onclick="openDetail('${r.id}')">
+              <td class="py-1.5 pr-3 text-slate-300 font-medium">${r.company}</td>
+              <td class="py-1.5 pr-3 font-semibold text-amber-400">${r.max_human_conf_seen != null ? Math.round(r.max_human_conf_seen * 100) + '%' : '—'}</td>
+              <td class="py-1.5 pr-3 text-slate-500">${r.ended_reason ?? '—'}</td>
+              <td class="py-1.5 pr-3 text-slate-400 max-w-xs truncate" title="${(r.closest_human_text ?? '').replace(/"/g, '&quot;')}">${r.closest_human_text ?? '—'}</td>
+              <td class="py-1.5 text-slate-600 whitespace-nowrap">${relTime(r.started_at)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`
+    : (fnCount > 0 ? `<div class="text-amber-400 text-xs mt-2">🟡 ${fnCount} false negative(s) — no transcript rows available</div>` : '');
+
+  document.getElementById('detection-content').innerHTML = (fpCount === 0 && fnCount === 0)
+    ? `<div class="text-emerald-400 text-sm">✅ No detection errors in last 30 days (based on ${withFeedback} labelled calls)</div>`
+    : fpSection + fnSection;
 }
 
 // Categories excluded from AI Performance Rate denominator but included in Overall Rate
@@ -1008,6 +1127,134 @@ function relTime(ts) {
   const h = Math.floor(m / 60);
   if (h < 24)  return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+// ─── Memory Tab ───────────────────────────────────────────────────────────────
+let _memoryLoaded = false;
+let _selectedMemoryCompany = null;
+
+async function loadMemory() {
+  if (_memoryLoaded) return;
+  _memoryLoaded = true;
+  const companies = await api('/debug/memory');
+  renderMemoryCompanyList(companies);
+  if (companies.length > 0) selectMemoryCompany(companies[0].company);
+}
+
+function renderMemoryCompanyList(companies) {
+  const el = document.getElementById('memory-company-list');
+  if (!companies.length) {
+    el.innerHTML = '<div class="text-slate-600 text-xs">No learning data yet</div>';
+    return;
+  }
+  el.innerHTML = companies.map(c => `
+    <div id="mco-${c.company}" onclick="selectMemoryCompany('${c.company.replace(/'/g, "\\'")}')"
+         class="cursor-pointer rounded-lg px-3 py-2 text-sm transition-colors hover:bg-slate-800">
+      <div class="font-medium text-slate-200 truncate">${c.company}</div>
+      <div class="text-slate-500 text-xs">${c.patterns} paths · ${c.nodes} nodes</div>
+    </div>`).join('');
+}
+
+async function selectMemoryCompany(company) {
+  _selectedMemoryCompany = company;
+  // Highlight selection
+  document.querySelectorAll('[id^="mco-"]').forEach(el => el.classList.remove('bg-slate-700'));
+  const btn = document.getElementById(`mco-${company}`);
+  if (btn) btn.classList.add('bg-slate-700');
+
+  document.getElementById('memory-detail').innerHTML = '<div class="text-slate-500 text-sm">Loading…</div>';
+  const data = await api(`/debug/memory/${encodeURIComponent(company)}`);
+  renderMemoryDetail(company, data);
+}
+
+function renderMemoryDetail(company, { patterns, nodes, ivrNote, userNotes }) {
+  const actionColor = a => ({ press_key:'#3b82f6', say_phrase:'#a855f7', wait:'#6b7280', end_call:'#ef4444', escalate_to_user:'#f59e0b' })[a] ?? '#6b7280';
+
+  // Layer 1: Memory Patterns
+  const pHtml = patterns.length ? `
+    <div class="space-y-2">
+      ${patterns.map((p, i) => {
+        const path = Array.isArray(p.path) ? p.path : JSON.parse(p.path || '[]');
+        const sr = Math.round(p.success_rate * 100);
+        const srColor = sr >= 70 ? 'text-emerald-400' : sr >= 40 ? 'text-amber-400' : 'text-red-400';
+        return `<div class="bg-slate-900 rounded-lg p-3">
+          <div class="flex items-center gap-3 mb-2">
+            <span class="${srColor} font-bold text-lg">${sr}%</span>
+            <span class="text-slate-500 text-xs">${p.sample_count} calls</span>
+            ${p.avg_wait_seconds ? `<span class="text-slate-600 text-xs">avg wait ${fmtSecs(p.avg_wait_seconds)}</span>` : ''}
+            <span class="text-slate-600 text-xs ml-auto">verified ${relTime(p.last_verified_at)}</span>
+          </div>
+          <div class="flex flex-wrap gap-1">
+            ${path.map(step => `<span class="badge text-white text-xs" style="background:${actionColor(step.split(' ')[0] === 'press' ? 'press_key' : step.startsWith('say') ? 'say_phrase' : 'wait')}">${step}</span>`).join('<span class="text-slate-600">→</span>')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : '<div class="text-slate-600 text-sm">No patterns yet</div>';
+
+  // Layer 2: IVR Decision Nodes
+  const nHtml = nodes.length ? `
+    <table class="w-full text-xs">
+      <thead><tr class="text-slate-500 border-b border-slate-700">
+        <th class="text-left pb-2 pr-3">IVR Text</th>
+        <th class="text-left pb-2 pr-3">Action</th>
+        <th class="text-right pb-2 pr-3">Calls</th>
+        <th class="text-right pb-2">Success</th>
+      </tr></thead>
+      <tbody>
+        ${nodes.map(n => {
+          const sp = parseInt(n.success_pct ?? 0);
+          const sc = sp >= 70 ? 'text-emerald-400' : sp >= 40 ? 'text-amber-400' : 'text-red-400';
+          const actionLabel = n.ai_action === 'press_key' ? `press [${n.ai_value}]`
+                            : n.ai_action === 'say_phrase' ? `say "${n.ai_value}"`
+                            : n.ai_action === 'wait' ? `wait ${n.ai_value}s`
+                            : n.ai_action;
+          return `<tr class="border-b border-slate-700/30">
+            <td class="py-1.5 pr-3 text-slate-300 max-w-xs truncate" title="${n.ivr_text.replace(/"/g,'&quot;')}">${n.ivr_text}</td>
+            <td class="py-1.5 pr-3"><span class="badge text-white" style="background:${actionColor(n.ai_action)}">${actionLabel}</span></td>
+            <td class="py-1.5 pr-3 text-right text-slate-400">${n.calls_total}</td>
+            <td class="py-1.5 text-right font-semibold ${sc}">${n.success_pct ?? '—'}%</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : '<div class="text-slate-600 text-sm">No node data yet</div>';
+
+  // Layer 3: Notes
+  const ivrNoteHtml = ivrNote
+    ? `<div class="bg-slate-900 rounded-lg p-3 text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">${ivrNote.summary}</div>
+       <div class="text-slate-600 text-xs mt-1">Outcome: ${ivrNote.outcome} · Updated ${relTime(ivrNote.updated_at)}</div>`
+    : '<div class="text-slate-600 text-sm">No AI note yet (generated after first successful call)</div>';
+
+  const userNoteHtml = userNotes.length
+    ? userNotes.map(n => `<div class="bg-slate-900 rounded-lg p-3 text-slate-300 text-sm">${n.note}</div>`).join('')
+    : '<div class="text-slate-600 text-sm">No user notes for this company</div>';
+
+  document.getElementById('memory-detail').innerHTML = `
+    <div class="text-lg font-bold text-slate-100 mb-4">${company}</div>
+
+    <div class="mb-5">
+      <div class="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">
+        Layer 1 — Navigation Paths <span class="text-slate-600 font-normal normal-case">(${patterns.length} paths learned)</span>
+      </div>
+      ${pHtml}
+    </div>
+
+    <div class="mb-5">
+      <div class="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">
+        Layer 2 — IVR Decision Nodes <span class="text-slate-600 font-normal normal-case">(${nodes.length} utterances mapped)</span>
+      </div>
+      <div class="bg-slate-800 rounded-lg p-4 overflow-x-auto">${nHtml}</div>
+    </div>
+
+    <div class="mb-5">
+      <div class="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">Layer 3 — AI-Generated IVR Note</div>
+      ${ivrNoteHtml}
+    </div>
+
+    <div>
+      <div class="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">Layer 3 — User Notes</div>
+      ${userNoteHtml}
+    </div>
+  `;
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
