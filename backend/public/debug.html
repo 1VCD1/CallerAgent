@@ -39,6 +39,7 @@
     <button id="tab-overview" class="tab-btn active" onclick="showTab('overview')">Overview</button>
     <button id="tab-calls"    class="tab-btn"        onclick="showTab('calls')">Call Log</button>
     <button id="tab-memory"   class="tab-btn"        onclick="showTab('memory')">Memory</button>
+    <button id="tab-testing"  class="tab-btn"        onclick="showTab('testing')">Testing</button>
   </nav>
   <div class="ml-auto text-slate-500 text-xs font-mono" id="last-updated"></div>
 </header>
@@ -157,6 +158,61 @@
   </div>
 </div>
 
+<!-- TESTING TAB -->
+<div id="screen-testing" class="hidden p-6 max-w-5xl mx-auto">
+
+  <!-- Header + Run button -->
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <div class="text-slate-100 font-bold text-lg">AI Evaluation</div>
+      <div class="text-slate-500 text-xs mt-0.5">Run all test scenarios to measure accuracy after each code change</div>
+    </div>
+    <button onclick="triggerTestRun()" id="run-btn"
+      class="bg-blue-600 hover:bg-blue-500 text-white text-sm px-5 py-2 rounded-lg font-medium transition-colors">
+      Run Tests
+    </button>
+  </div>
+
+  <!-- Metric explanation cards -->
+  <div class="grid grid-cols-3 gap-3 mb-5">
+    <div class="bg-slate-800 rounded-lg p-4">
+      <div class="text-slate-400 text-xs font-semibold mb-1">Overall Accuracy</div>
+      <div id="metric-accuracy" class="text-3xl font-bold text-slate-400">—</div>
+      <div class="text-slate-500 text-xs mt-2 leading-relaxed">Scenarios where AI produced exactly the right outcome (human reached, outside hours, voicemail, etc.)</div>
+    </div>
+    <div class="bg-slate-800 rounded-lg p-4">
+      <div class="text-slate-400 text-xs font-semibold mb-1">Human Detection Rate</div>
+      <div id="metric-human" class="text-3xl font-bold text-slate-400">—</div>
+      <div class="text-slate-500 text-xs mt-2 leading-relaxed">Of scenarios with a real human at the end, how many did AI successfully detect and escalate to you?</div>
+    </div>
+    <div class="bg-slate-800 rounded-lg p-4">
+      <div class="text-slate-400 text-xs font-semibold mb-1">False Positive Rate</div>
+      <div id="metric-fp" class="text-3xl font-bold text-slate-400">—</div>
+      <div class="text-slate-500 text-xs mt-2 leading-relaxed">Of scenarios with NO human, how often did AI wrongly escalate thinking there was one? Lower is better.</div>
+    </div>
+  </div>
+
+  <!-- Latest run info + scenario results -->
+  <div class="bg-slate-800 rounded-lg p-4 mb-4">
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-slate-400 text-xs font-semibold">Scenario Results</div>
+      <div id="test-run-meta" class="text-slate-600 text-xs"></div>
+    </div>
+    <div id="test-results-list" class="space-y-2">
+      <div class="text-slate-500 text-sm">No test runs yet. Click "Run Tests" to start.</div>
+    </div>
+  </div>
+
+  <!-- Run history -->
+  <div class="bg-slate-800 rounded-lg p-4">
+    <div class="text-slate-400 text-xs font-semibold mb-3">Run History</div>
+    <div id="test-run-history" class="space-y-1">
+      <div class="text-slate-600 text-xs">No history yet.</div>
+    </div>
+  </div>
+
+</div>
+
 <!-- CALLS TAB -->
 <div id="screen-calls" class="hidden p-6 max-w-7xl mx-auto">
   <!-- Filters -->
@@ -232,15 +288,14 @@ let _debounceTimer = null;
 // ─── Navigation ───────────────────────────────────────────────────────────────
 function showTab(tab) {
   currentTab = tab;
-  document.getElementById('tab-overview').classList.toggle('active', tab === 'overview');
-  document.getElementById('tab-calls').classList.toggle('active', tab === 'calls');
-  document.getElementById('tab-memory').classList.toggle('active', tab === 'memory');
-  document.getElementById('screen-overview').classList.toggle('hidden', tab !== 'overview');
-  document.getElementById('screen-calls').classList.toggle('hidden', tab !== 'calls');
-  document.getElementById('screen-memory').classList.toggle('hidden', tab !== 'memory');
+  ['overview','calls','memory','testing'].forEach(t => {
+    document.getElementById(`tab-${t}`).classList.toggle('active', tab === t);
+    document.getElementById(`screen-${t}`).classList.toggle('hidden', tab !== t);
+  });
   document.getElementById('screen-detail').classList.add('hidden');
-  if (tab === 'calls') loadCalls();
-  if (tab === 'memory') loadMemory();
+  if (tab === 'calls')   loadCalls();
+  if (tab === 'memory')  loadMemory();
+  if (tab === 'testing') loadTesting();
 }
 
 function showDetail() {
@@ -1272,6 +1327,121 @@ function renderMemoryDetail(phoneNumber, { patterns, nodes, ivrNote, userNotes, 
       ${userNoteHtml}
     </div>
   `;
+}
+
+// ─── Testing Tab ──────────────────────────────────────────────────────────────
+let _testingLoaded = false;
+
+async function loadTesting() {
+  if (_testingLoaded) return;
+  _testingLoaded = true;
+  const data = await api('/debug/test/latest').catch(() => null);
+  const runs  = await api('/debug/test/runs').catch(() => []);
+  renderTestResults(data);
+  renderRunHistory(runs);
+}
+
+async function triggerTestRun() {
+  const btn = document.getElementById('run-btn');
+  btn.textContent = 'Running...';
+  btn.disabled = true;
+  btn.classList.add('opacity-50');
+  document.getElementById('test-results-list').innerHTML =
+    '<div class="text-slate-500 text-sm animate-pulse">Running all scenarios — this takes 3-5 minutes...</div>';
+
+  await api('/debug/test/run').catch(() => null);
+
+  // Poll until done
+  const poll = setInterval(async () => {
+    const runs = await api('/debug/test/runs').catch(() => []);
+    const latest = runs[0];
+    if (latest?.ended_at) {
+      clearInterval(poll);
+      btn.textContent = 'Run Tests';
+      btn.disabled = false;
+      btn.classList.remove('opacity-50');
+      _testingLoaded = false;
+      loadTesting();
+    }
+  }, 10000);
+}
+
+function renderTestResults(data) {
+  if (!data?.run) {
+    document.getElementById('test-run-meta').textContent = '';
+    return;
+  }
+  const r = data.run;
+  const pct = v => v != null ? Math.round(v * 100) + '%' : '—';
+  const color = (v, good, warn) => v == null ? 'text-slate-400'
+    : v >= good ? 'text-emerald-400' : v >= warn ? 'text-amber-400' : 'text-red-400';
+  const fpColor = v => v == null ? 'text-slate-400'
+    : v <= 0 ? 'text-emerald-400' : v <= 0.1 ? 'text-amber-400' : 'text-red-400';
+
+  document.getElementById('metric-accuracy').className = `text-3xl font-bold ${color(r.accuracy, 0.8, 0.5)}`;
+  document.getElementById('metric-accuracy').textContent = pct(r.accuracy);
+  document.getElementById('metric-human').className = `text-3xl font-bold ${color(r.human_detection_rate, 0.9, 0.7)}`;
+  document.getElementById('metric-human').textContent = pct(r.human_detection_rate);
+  document.getElementById('metric-fp').className = `text-3xl font-bold ${fpColor(r.false_positive_rate)}`;
+  document.getElementById('metric-fp').textContent = pct(r.false_positive_rate);
+
+  const ago = relTime(r.started_at);
+  document.getElementById('test-run-meta').textContent =
+    `${r.passed}/${r.total_scenarios} passed · avg ${r.avg_turns?.toFixed(1)} turns · ${ago}`;
+
+  if (!data.results?.length) return;
+  document.getElementById('test-results-list').innerHTML = data.results.map(s => {
+    const pass = s.passed;
+    const rowBg = pass ? 'bg-emerald-950 border-emerald-800' : 'bg-red-950 border-red-900';
+    const tag = s.has_human ? 'has human' : 'no human';
+    const tagColor = s.has_human ? 'bg-blue-900 text-blue-300' : 'bg-slate-700 text-slate-400';
+    const humanBadge = s.human_detected
+      ? '<span class="badge bg-emerald-900 text-emerald-300 text-xs">human detected</span>'
+      : s.has_human
+        ? '<span class="badge bg-red-900 text-red-300 text-xs">human MISSED</span>'
+        : '';
+    const fpBadge = s.false_positive
+      ? '<span class="badge bg-orange-900 text-orange-300 text-xs">false positive</span>' : '';
+
+    const transcript = (s.transcript || []).slice(0, 6).map(t =>
+      `<div class="text-xs ${t.role === 'IVR' ? 'text-slate-400' : 'text-blue-400'} leading-tight">
+        <span class="font-semibold">${t.role}:</span> ${t.text?.slice(0, 80) ?? ''}${t.text?.length > 80 ? '…' : ''}
+      </div>`
+    ).join('');
+
+    return `<div class="border rounded-lg p-3 ${rowBg}">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="font-medium text-slate-100 text-sm">${pass ? '[PASS]' : '[FAIL]'} ${s.scenario_name}</span>
+        <span class="badge ${tagColor} text-xs">${tag}</span>
+        ${humanBadge}${fpBadge}
+        <span class="ml-auto text-slate-500 text-xs">${s.turns} turns</span>
+      </div>
+      <div class="text-slate-500 text-xs mt-1">
+        Expected: <span class="text-slate-300">${s.expected_outcome}</span>
+        &nbsp;→&nbsp; Got: <span class="${pass ? 'text-emerald-400' : 'text-red-400'}">${s.actual_outcome}</span>
+      </div>
+      <details class="mt-2">
+        <summary class="text-slate-600 text-xs cursor-pointer hover:text-slate-400">Show transcript</summary>
+        <div class="mt-2 space-y-0.5 pl-2 border-l border-slate-700">${transcript}</div>
+      </details>
+    </div>`;
+  }).join('');
+}
+
+function renderRunHistory(runs) {
+  if (!runs?.length) return;
+  document.getElementById('test-run-history').innerHTML = runs.map(r => {
+    const pct = v => v != null ? Math.round(v * 100) + '%' : '—';
+    const color = r.accuracy >= 0.8 ? 'text-emerald-400' : r.accuracy >= 0.5 ? 'text-amber-400' : 'text-red-400';
+    return `<div class="flex items-center gap-3 text-xs border-b border-slate-700/50 py-1.5">
+      <span class="text-slate-600 w-24 shrink-0">${relTime(r.started_at)}</span>
+      <span class="font-bold ${color}">${pct(r.accuracy)}</span>
+      <span class="text-slate-500">${r.passed}/${r.total_scenarios} passed</span>
+      <span class="text-slate-600">human: ${pct(r.human_detection_rate)}</span>
+      <span class="text-slate-600">FP: ${pct(r.false_positive_rate)}</span>
+      <span class="text-slate-600 ml-auto">${r.avg_turns?.toFixed(1)} avg turns</span>
+    </div>`;
+  }).join('');
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
