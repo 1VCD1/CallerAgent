@@ -344,22 +344,7 @@ function renderFunnel(f) {
     ${funnelStage('✅ Human Reached', humanReached, navigated,   overallRate >= 50 ? 'text-emerald-400' : overallRate >= 25 ? 'text-amber-400' : 'text-red-400', overallRate + '%', 'of navigated', `-${navigated - humanReached} no_human_path / outside_hours / etc`)}
   `;
 
-  // Second row: the two success rates explained
-  document.getElementById('funnel-rates').innerHTML = `
-    <div class="flex flex-wrap gap-6 pt-3 border-t border-slate-700 mt-1">
-      <div>
-        <span class="text-slate-500 text-xs">Overall Rate</span>
-        <span class="ml-2 font-bold text-sm ${overallRate >= 50 ? 'text-emerald-400' : overallRate >= 25 ? 'text-amber-400' : 'text-red-400'}">${overallRate}%</span>
-        <span class="text-slate-600 text-xs ml-1">— human_reached ÷ all navigated</span>
-      </div>
-      <div>
-        <span class="text-slate-500 text-xs">AI Performance Rate</span>
-        <span class="ml-2 font-bold text-sm ${aiRate >= 60 ? 'text-emerald-400' : aiRate >= 35 ? 'text-amber-400' : 'text-red-400'}">${aiRate}%</span>
-        <span class="text-slate-600 text-xs ml-1">— human_reached ÷ reachable calls (excl. outside_hours / voicemail / invalid)</span>
-      </div>
-      <div class="text-slate-600 text-xs self-center">Reachable: ${navigable} calls</div>
-    </div>
-  `;
+  // funnel-rates removed — rates now shown in North Star
 }
 
 function funnelStage(label, count, denom, color, rate, rateSub, dropped) {
