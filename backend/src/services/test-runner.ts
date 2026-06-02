@@ -110,6 +110,15 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
   let lastAction: LLMAction | null = null;
   let recentHumanConfidences: number[] = [];
 
+  // State tracking — mirrors production webhook handler exactly
+  let consecutiveWaits = 0;
+  let consecutiveLowConf = 0;
+  let samePhrase: { phrase: string; count: number } | undefined;
+  let sameKey: { key: string; count: number } | undefined;
+  let currentCallState: string = 'IVR_NAVIGATION';
+  let totalActions = 0;
+  const recentFailures: string[] = [];
+
   try {
     // Initial IVR greeting
     const greeting = await simulateIvr(scenario.ivrPersona, [], null);
@@ -163,9 +172,12 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
           .map(t => ({ action: 'say_phrase' as const, value: t.text, success: true, timestamp: new Date() })),
         historicalMemory: [],
         ivrDecisionTree: [],
-        recentFailures: [],
-        consecutiveWaits: 0,
-        currentCallState: 'IVR_NAVIGATION',
+        recentFailures: [...recentFailures.slice(-5)],
+        consecutiveWaits,
+        consecutiveSamePhrase: samePhrase,
+        consecutiveSameKey: sameKey,
+        consecutiveLowConfidence: consecutiveLowConf,
+        currentCallState: currentCallState as any,
         recentHumanConfidences,
         speakerChanged: false,
         audioAnalysis: null,
@@ -174,7 +186,43 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
 
       const action = await decideLLMAction(context, true); // dryRun: no DB writes during test
       lastAction = action;
+      totalActions++;
       recentHumanConfidences = [...recentHumanConfidences.slice(-9), action.humanConfidence ?? 0];
+
+      // Update state tracking — mirrors production webhook handler
+      if (action.action === 'wait') {
+        consecutiveWaits++;
+      } else {
+        consecutiveWaits = 0;
+      }
+
+      if (action.action === 'say_phrase' && action.value) {
+        if (samePhrase?.phrase === action.value) {
+          samePhrase = { phrase: action.value, count: samePhrase.count + 1 };
+        } else {
+          samePhrase = { phrase: action.value, count: 1 };
+        }
+      } else {
+        samePhrase = undefined;
+      }
+
+      if (action.action === 'press_key' && action.value) {
+        if (sameKey?.key === action.value) {
+          sameKey = { key: action.value, count: sameKey.count + 1 };
+        } else {
+          sameKey = { key: action.value, count: 1 };
+        }
+      } else {
+        sameKey = undefined;
+      }
+
+      const conf = action.confidence ?? 0;
+      consecutiveLowConf = conf < 0.45 ? consecutiveLowConf + 1 : 0;
+
+      // Transition to EXPLORATION after many actions without success (mirrors production)
+      if (totalActions >= 8 && currentCallState === 'IVR_NAVIGATION') {
+        currentCallState = 'EXPLORATION';
+      }
 
       const actionText = action.action === 'press_key'  ? `[Press ${action.value}]`
                        : action.action === 'say_phrase' ? action.value ?? ''
