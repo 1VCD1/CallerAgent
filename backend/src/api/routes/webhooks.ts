@@ -600,7 +600,7 @@ function buildActionTwiML(action: string, value: string | undefined, gatherUrl: 
       // Pause INSIDE the Gather so we keep listening while waiting
       return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech dtmf" timeout="8" speechTimeout="auto" action="${gatherUrl}" method="POST">
+  <Gather input="speech dtmf" timeout="8" speechTimeout="1" action="${gatherUrl}" method="POST">
     <Pause length="${cappedSecs}"/>
   </Gather>
   <Redirect method="POST">${gatherUrl}</Redirect>
@@ -621,7 +621,7 @@ function buildActionTwiML(action: string, value: string | undefined, gatherUrl: 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   ${innerXml}
-  <Gather input="speech dtmf" timeout="8" speechTimeout="auto" action="${gatherUrl}" method="POST">
+  <Gather input="speech dtmf" timeout="8" speechTimeout="1" action="${gatherUrl}" method="POST">
     <Pause length="1"/>
   </Gather>
   <Redirect method="POST">${gatherUrl}</Redirect>
@@ -640,7 +640,7 @@ function escapeXml(str: string): string {
 function buildGatherTwiML(gatherUrl: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather input="speech dtmf" timeout="8" speechTimeout="auto" action="${gatherUrl}" method="POST">
+  <Gather input="speech dtmf" timeout="8" speechTimeout="1" action="${gatherUrl}" method="POST">
     <Pause length="1"/>
   </Gather>
   <Redirect method="POST">${gatherUrl}</Redirect>
