@@ -19,12 +19,63 @@ async function generateEmbedding(company: string, goal: string): Promise<number[
   }
 }
 
-export async function getMemoryPatterns(company: string, goal: string): Promise<MemoryPattern[]> {
-  // Primary: exact company + goal match
-  const exact = await query<{
+export async function getMemoryPatterns(company: string, goal: string, phoneNumber?: string): Promise<MemoryPattern[]> {
+  type Row = {
     id: string; company: string; goal: string; path: string[];
     success_rate: number; sample_count: number; avg_wait_seconds: number; last_verified_at: Date;
-  }>(
+    strategy_score?: string;
+  };
+
+  // Primary: exact phone_number match (most specific — different numbers = different IVR trees)
+  if (phoneNumber) {
+    const byPhone = await query<Row>(
+      `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
+              (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
+       FROM memory_patterns
+       WHERE phone_number = $1 AND LOWER(goal) = LOWER($2)
+       ORDER BY strategy_score DESC, sample_count DESC
+       LIMIT 5`,
+      [phoneNumber, goal]
+    );
+    if (byPhone.length >= 3) return byPhone.map(toMemoryPattern);
+
+    // Some phone-specific patterns + fill remainder with company patterns
+    const usedIds = byPhone.map(r => r.id);
+    const byCompany = await query<Row>(
+      `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
+              (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
+       FROM memory_patterns
+       WHERE LOWER(company) = LOWER($1) AND LOWER(goal) = LOWER($2)
+         AND id != ALL($3::uuid[])
+       ORDER BY strategy_score DESC, sample_count DESC
+       LIMIT $4`,
+      [company, goal, usedIds, 5 - byPhone.length]
+    );
+    const combined = [...byPhone, ...byCompany];
+    if (combined.length >= 3) {
+      console.log(`[Memory] ${byPhone.length} phone-exact + ${byCompany.length} company for "${phoneNumber}"`);
+      return combined.map(toMemoryPattern);
+    }
+
+    // Fall through to semantic search with remaining slots
+    const embedding = await generateEmbedding(company, goal);
+    if (!embedding) return combined.map(toMemoryPattern);
+    const allUsed = combined.map(r => r.id);
+    const semantic = await query<Row & { distance: number }>(
+      `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
+              (strategy_embedding <=> $1::vector) AS distance,
+              (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
+       FROM memory_patterns
+       WHERE strategy_embedding IS NOT NULL AND id != ALL($2::uuid[])
+       ORDER BY distance ASC, strategy_score DESC LIMIT $3`,
+      [`[${embedding.join(',')}]`, allUsed, 5 - combined.length]
+    );
+    console.log(`[Memory] ${byPhone.length} phone + ${byCompany.length} company + ${semantic.length} semantic for "${phoneNumber}"`);
+    return [...combined, ...semantic].map(toMemoryPattern);
+  }
+
+  // No phone number: company match + semantic search
+  const exact = await query<Row>(
     `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
             (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
      FROM memory_patterns
@@ -33,41 +84,27 @@ export async function getMemoryPatterns(company: string, goal: string): Promise<
      LIMIT 5`,
     [company, goal]
   );
-
   if (exact.length >= 3) return exact.map(toMemoryPattern);
 
-  // Fallback: semantic similarity search using pgvector
   const embedding = await generateEmbedding(company, goal);
   if (!embedding) return exact.map(toMemoryPattern);
-
-  const semantic = await query<{
-    id: string; company: string; goal: string; path: string[];
-    success_rate: number; sample_count: number; avg_wait_seconds: number;
-    last_verified_at: Date; distance: number;
-  }>(
+  const semantic = await query<Row & { distance: number }>(
     `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
             (strategy_embedding <=> $1::vector) AS distance,
             (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
      FROM memory_patterns
-     WHERE strategy_embedding IS NOT NULL
-       AND id != ALL($2::uuid[])
-     ORDER BY distance ASC, strategy_score DESC
-     LIMIT $3`,
-    [
-      `[${embedding.join(',')}]`,
-      exact.map(r => r.id),
-      5 - exact.length,
-    ]
+     WHERE strategy_embedding IS NOT NULL AND id != ALL($2::uuid[])
+     ORDER BY distance ASC, strategy_score DESC LIMIT $3`,
+    [`[${embedding.join(',')}]`, exact.map(r => r.id), 5 - exact.length]
   );
-
-  const combined = [...exact.map(toMemoryPattern), ...semantic.map(toMemoryPattern)];
-  console.log(`[Memory] ${exact.length} exact + ${semantic.length} semantic matches for "${company}"`);
-  return combined;
+  console.log(`[Memory] ${exact.length} exact + ${semantic.length} semantic for "${company}"`);
+  return [...exact, ...semantic].map(toMemoryPattern);
 }
 
 export async function recordCallOutcome(params: {
   callId: string;
   company: string;
+  phoneNumber: string;
   goal: string;
   humanReached: boolean;
   waitDurationSeconds?: number;
@@ -83,10 +120,11 @@ export async function recordCallOutcome(params: {
   if (path.length === 0) return;
 
   const pathKey = JSON.stringify(path);
+  // Look up by phone_number (most specific key) — fall back to company for old records
   const existing = await queryOne<{ id: string; sample_count: number; success_rate: number }>(
     `SELECT id, sample_count, success_rate FROM memory_patterns
-     WHERE company = $1 AND goal = $2 AND path::text = $3`,
-    [params.company, params.goal, pathKey]
+     WHERE phone_number = $1 AND goal = $2 AND path::text = $3`,
+    [params.phoneNumber, params.goal, pathKey]
   );
 
   const embedding = await generateEmbedding(params.company, params.goal);
@@ -112,9 +150,10 @@ export async function recordCallOutcome(params: {
     );
   } else {
     await query(
-      `INSERT INTO memory_patterns (company, goal, path, success_rate, sample_count, avg_wait_seconds, strategy_embedding, last_verified_at)
-       VALUES ($1, $2, $3, $4, 1, $5, $6::vector, NOW())`,
+      `INSERT INTO memory_patterns (phone_number, company, goal, path, success_rate, sample_count, avg_wait_seconds, strategy_embedding, last_verified_at)
+       VALUES ($1, $2, $3, $4, $5, 1, $6, $7::vector, NOW())`,
       [
+        params.phoneNumber,
         params.company,
         params.goal,
         pathKey,
@@ -179,6 +218,7 @@ function jaccardWords(a: string, b: string): number {
 export async function recordIvrDecisionNodes(params: {
   callId: string;
   company: string;
+  phoneNumber: string;
   humanReached: boolean;
   endedReason: string | null;
 }): Promise<void> {
@@ -192,10 +232,10 @@ export async function recordIvrDecisionNodes(params: {
     ['callback_number_given', 'callback_offered'].includes(params.endedReason ?? '');
   const successDelta = success ? 1 : 0;
 
-  // Fetch existing nodes once per call for similarity matching
+  // Fetch existing nodes keyed by phone_number for similarity matching
   const existingNodes = await query<{ ivr_text: string; ai_action: string; ai_value: string }>(
-    `SELECT ivr_text, ai_action, ai_value FROM ivr_decision_nodes WHERE LOWER(company) = LOWER($1)`,
-    [params.company]
+    `SELECT ivr_text, ai_action, ai_value FROM ivr_decision_nodes WHERE phone_number = $1`,
+    [params.phoneNumber]
   );
 
   for (const { data } of decisions) {
@@ -204,14 +244,11 @@ export async function recordIvrDecisionNodes(params: {
     const normalized = normalizeIvr(data.ivr_utterance);
     const aiValue    = data.value ?? '';
 
-    // Strategy 1: DTMF fingerprint (stable key, unaffected by partial transcription)
     const dtmfKey = extractDtmfFingerprint(normalized);
-
     let ivrKey: string;
     if (dtmfKey) {
       ivrKey = dtmfKey;
     } else {
-      // Strategy 2: find the most similar existing node (same action+value) via Jaccard
       const candidates = existingNodes.filter(
         n => n.ai_action === data.action && n.ai_value === aiValue
       );
@@ -219,25 +256,24 @@ export async function recordIvrDecisionNodes(params: {
         .map(n => ({ text: n.ivr_text, sim: jaccardWords(normalized, n.ivr_text) }))
         .filter(n => n.sim > 0.55)
         .sort((a, b) => b.sim - a.sim)[0];
-
       ivrKey = best ? best.text : normalized;
     }
 
     await query(
       `INSERT INTO ivr_decision_nodes
-         (company, ivr_text, ai_action, ai_value, calls_success, calls_total)
-       VALUES ($1, $2, $3, $4, $5, 1)
-       ON CONFLICT (company, ivr_text, ai_action, ai_value)
+         (phone_number, company, ivr_text, ai_action, ai_value, calls_success, calls_total)
+       VALUES ($1, $2, $3, $4, $5, $6, 1)
+       ON CONFLICT (phone_number, ivr_text, ai_action, ai_value)
        DO UPDATE SET
-         calls_success = ivr_decision_nodes.calls_success + $5,
+         calls_success = ivr_decision_nodes.calls_success + $6,
          calls_total   = ivr_decision_nodes.calls_total   + 1,
          last_seen_at  = NOW()`,
-      [params.company, ivrKey, data.action, aiValue, successDelta]
+      [params.phoneNumber, params.company, ivrKey, data.action, aiValue, successDelta]
     );
   }
 }
 
-export async function getIvrDecisionTree(company: string): Promise<IvrDecisionNode[]> {
+export async function getIvrDecisionTree(phoneNumber: string): Promise<IvrDecisionNode[]> {
   const rows = await query<{
     ivr_text: string; ai_action: string; ai_value: string;
     calls_success: string; calls_total: string; success_pct: string;
@@ -245,10 +281,10 @@ export async function getIvrDecisionTree(company: string): Promise<IvrDecisionNo
     `SELECT ivr_text, ai_action, ai_value, calls_success, calls_total,
             ROUND(calls_success::numeric / calls_total * 100) AS success_pct
      FROM ivr_decision_nodes
-     WHERE LOWER(company) = LOWER($1) AND calls_total >= 2
+     WHERE phone_number = $1 AND calls_total >= 1
      ORDER BY calls_total DESC, ivr_text, success_pct DESC
      LIMIT 30`,
-    [company]
+    [phoneNumber]
   );
 
   return rows.map(r => ({

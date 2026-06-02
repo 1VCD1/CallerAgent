@@ -106,6 +106,10 @@ CREATE TABLE IF NOT EXISTS company_ivr_notes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ivr_notes_company ON company_ivr_notes(company);
+ALTER TABLE company_ivr_notes ADD COLUMN IF NOT EXISTS phone_number TEXT;
+CREATE INDEX IF NOT EXISTS idx_ivr_notes_phone ON company_ivr_notes(phone_number);
+ALTER TABLE user_company_notes ADD COLUMN IF NOT EXISTS phone_number TEXT;
+CREATE INDEX IF NOT EXISTS idx_user_notes_phone ON user_company_notes(phone_number);
 
 -- Adaptive Memory Patterns (THE CORE PRODUCT ASSET)
 CREATE TABLE IF NOT EXISTS memory_patterns (
@@ -126,3 +130,11 @@ CREATE INDEX IF NOT EXISTS idx_memory_patterns_company ON memory_patterns(compan
 CREATE INDEX IF NOT EXISTS idx_memory_patterns_goal ON memory_patterns(goal);
 CREATE INDEX IF NOT EXISTS idx_memory_patterns_success_rate ON memory_patterns(success_rate DESC);
 CREATE INDEX IF NOT EXISTS idx_memory_patterns_embedding ON memory_patterns USING hnsw (strategy_embedding vector_cosine_ops);
+
+-- Phone-number-keyed memory (added to fix company-name collision between different IVR trees)
+ALTER TABLE memory_patterns ADD COLUMN IF NOT EXISTS phone_number TEXT;
+CREATE INDEX IF NOT EXISTS idx_memory_patterns_phone ON memory_patterns(phone_number);
+
+ALTER TABLE ivr_decision_nodes ADD COLUMN IF NOT EXISTS phone_number TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ivr_nodes_phone_unique
+  ON ivr_decision_nodes(phone_number, ivr_text, ai_action, ai_value);

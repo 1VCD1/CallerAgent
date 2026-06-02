@@ -173,21 +173,28 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
     return { summary, falsePosRows, falseNegRows };
   });
 
-  // Memory tab: companies with any learning data
+  // Memory tab: all phone numbers with any learning data
   fastify.get('/debug/memory', async () => {
     const [patterns, nodes] = await Promise.all([
       query<any>(`
-        SELECT company, COUNT(*) AS patterns,
+        SELECT phone_number, company, COUNT(*) AS patterns,
                ROUND(MAX(success_rate) * 100) AS best_success_rate,
                MAX(updated_at) AS last_updated
-        FROM memory_patterns GROUP BY company ORDER BY patterns DESC
+        FROM memory_patterns
+        WHERE phone_number IS NOT NULL
+        GROUP BY phone_number, company ORDER BY patterns DESC
       `),
-      query<any>(`SELECT company, COUNT(*) AS nodes FROM ivr_decision_nodes GROUP BY company`),
+      query<any>(`
+        SELECT phone_number, company, COUNT(*) AS nodes
+        FROM ivr_decision_nodes WHERE phone_number IS NOT NULL
+        GROUP BY phone_number, company
+      `),
     ]);
 
     const map = new Map<string, any>();
     for (const p of patterns) {
-      map.set(p.company.toLowerCase(), {
+      map.set(p.phone_number, {
+        phoneNumber: p.phone_number,
         company: p.company,
         patterns: parseInt(p.patterns),
         nodes: 0,
@@ -196,39 +203,40 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
       });
     }
     for (const n of nodes) {
-      const key = n.company.toLowerCase();
-      const existing = map.get(key);
+      const existing = map.get(n.phone_number);
       if (existing) existing.nodes = parseInt(n.nodes);
-      else map.set(key, { company: n.company, patterns: 0, nodes: parseInt(n.nodes), bestSuccessRate: 0 });
+      else map.set(n.phone_number, { phoneNumber: n.phone_number, company: n.company, patterns: 0, nodes: parseInt(n.nodes), bestSuccessRate: 0 });
     }
     return [...map.values()].sort((a, b) => (b.patterns + b.nodes) - (a.patterns + a.nodes));
   });
 
-  // Per-company: all 3 learning layers
-  fastify.get('/debug/memory/:company', async (request) => {
-    const { company } = request.params as { company: string };
-    const [patterns, nodes, ivrNote, userNotes] = await Promise.all([
+  // Per-phone: all 3 learning layers
+  fastify.get('/debug/memory/:phoneNumber', async (request) => {
+    const { phoneNumber } = request.params as { phoneNumber: string };
+    const [patterns, nodes, ivrNote, userNotes, companyName] = await Promise.all([
       query<any>(`
         SELECT path, success_rate, sample_count, avg_wait_seconds, last_verified_at
-        FROM memory_patterns WHERE LOWER(company) = LOWER($1)
+        FROM memory_patterns WHERE phone_number = $1
         ORDER BY success_rate DESC, sample_count DESC
-      `, [company]),
+      `, [phoneNumber]),
       query<any>(`
         SELECT ivr_text, ai_action, ai_value, calls_success, calls_total,
                ROUND(calls_success::numeric / NULLIF(calls_total, 0) * 100) AS success_pct,
                last_seen_at
-        FROM ivr_decision_nodes WHERE LOWER(company) = LOWER($1)
+        FROM ivr_decision_nodes WHERE phone_number = $1
         ORDER BY calls_total DESC LIMIT 60
-      `, [company]),
+      `, [phoneNumber]),
       queryOne<any>(`
         SELECT summary, outcome, updated_at FROM company_ivr_notes
-        WHERE LOWER(company) = LOWER($1) ORDER BY updated_at DESC LIMIT 1
-      `, [company]),
+        WHERE phone_number = $1 ORDER BY updated_at DESC LIMIT 1
+      `, [phoneNumber]),
       query<any>(`
-        SELECT note, updated_at FROM user_company_notes WHERE LOWER(company) = LOWER($1)
-      `, [company]),
+        SELECT note, updated_at FROM user_company_notes
+        WHERE phone_number = $1
+      `, [phoneNumber]),
+      queryOne<any>(`SELECT DISTINCT company FROM calls WHERE phone_number = $1 LIMIT 1`, [phoneNumber]),
     ]);
-    return { patterns, nodes, ivrNote, userNotes };
+    return { patterns, nodes, ivrNote, userNotes, company: companyName?.company ?? phoneNumber };
   });
 
   // Paginated call list with per-call debug flags

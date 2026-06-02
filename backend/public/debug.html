@@ -1152,36 +1152,36 @@ async function loadMemory() {
   _memoryLoaded = true;
   const companies = await api('/debug/memory');
   renderMemoryCompanyList(companies);
-  if (companies.length > 0) selectMemoryCompany(companies[0].company);
+  if (companies.length > 0) selectMemoryPhone(companies[0].phoneNumber);
 }
 
-function renderMemoryCompanyList(companies) {
+function renderMemoryCompanyList(entries) {
   const el = document.getElementById('memory-company-list');
-  if (!companies.length) {
+  if (!entries.length) {
     el.innerHTML = '<div class="text-slate-600 text-xs">No learning data yet</div>';
     return;
   }
-  el.innerHTML = companies.map(c => `
-    <div id="mco-${c.company}" onclick="selectMemoryCompany('${c.company.replace(/'/g, "\\'")}')"
+  el.innerHTML = entries.map(c => `
+    <div id="mco-${c.phoneNumber}" onclick="selectMemoryPhone('${c.phoneNumber.replace(/'/g, "\\'")}')"
          class="cursor-pointer rounded-lg px-3 py-2 text-sm transition-colors hover:bg-slate-800">
-      <div class="font-medium text-slate-200 truncate">${c.company}</div>
-      <div class="text-slate-500 text-xs">${c.patterns} paths · ${c.nodes} nodes</div>
+      <div class="font-medium text-slate-200 font-mono text-xs">${c.phoneNumber}</div>
+      <div class="text-slate-400 text-xs truncate">${c.company}</div>
+      <div class="text-slate-600 text-xs">${c.patterns} paths · ${c.nodes} nodes</div>
     </div>`).join('');
 }
 
-async function selectMemoryCompany(company) {
-  _selectedMemoryCompany = company;
-  // Highlight selection
+async function selectMemoryPhone(phoneNumber) {
+  _selectedMemoryCompany = phoneNumber;
   document.querySelectorAll('[id^="mco-"]').forEach(el => el.classList.remove('bg-slate-700'));
-  const btn = document.getElementById(`mco-${company}`);
+  const btn = document.getElementById(`mco-${phoneNumber}`);
   if (btn) btn.classList.add('bg-slate-700');
 
   document.getElementById('memory-detail').innerHTML = '<div class="text-slate-500 text-sm">Loading…</div>';
-  const data = await api(`/debug/memory/${encodeURIComponent(company)}`);
-  renderMemoryDetail(company, data);
+  const data = await api(`/debug/memory/${encodeURIComponent(phoneNumber)}`);
+  renderMemoryDetail(phoneNumber, data);
 }
 
-function renderMemoryDetail(company, { patterns, nodes, ivrNote, userNotes }) {
+function renderMemoryDetail(phoneNumber, { patterns, nodes, ivrNote, userNotes, company }) {
   const actionColor = a => ({ press_key:'#3b82f6', say_phrase:'#a855f7', wait:'#6b7280', end_call:'#ef4444', escalate_to_user:'#f59e0b' })[a] ?? '#6b7280';
 
   // Layer 1: Memory Patterns
@@ -1243,7 +1243,10 @@ function renderMemoryDetail(company, { patterns, nodes, ivrNote, userNotes }) {
     : '<div class="text-slate-600 text-sm">No user notes for this company</div>';
 
   document.getElementById('memory-detail').innerHTML = `
-    <div class="text-lg font-bold text-slate-100 mb-4">${company}</div>
+    <div class="mb-4">
+      <div class="text-lg font-bold text-slate-100 font-mono">${phoneNumber}</div>
+      <div class="text-slate-400 text-sm">${company}</div>
+    </div>
 
     <div class="mb-5">
       <div class="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-2">

@@ -65,9 +65,9 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       activeOrchestrators.delete(callId);
 
       const callRow = await query<{
-        company: string; goal: string; human_reached: boolean;
+        company: string; phone_number: string; goal: string; human_reached: boolean;
         wait_duration_seconds: number | null; ended_reason: string | null;
-      }>(`SELECT company, goal, human_reached, wait_duration_seconds, ended_reason FROM calls WHERE id = $1`, [callId]);
+      }>(`SELECT company, phone_number, goal, human_reached, wait_duration_seconds, ended_reason FROM calls WHERE id = $1`, [callId]);
 
       // Refine callback_offered into specific sub-reasons
       if (callRow[0]?.ended_reason === 'callback_offered') {
@@ -90,6 +90,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         recordCallOutcome({
           callId,
           company: callRow[0].company,
+          phoneNumber: callRow[0].phone_number,
           goal: callRow[0].goal,
           humanReached: callRow[0].human_reached,
           waitDurationSeconds: callRow[0].wait_duration_seconds ?? undefined,
@@ -98,6 +99,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         recordIvrDecisionNodes({
           callId,
           company: callRow[0].company,
+          phoneNumber: callRow[0].phone_number,
           humanReached: callRow[0].human_reached,
           endedReason,
         }).catch(err => console.error(`[Status] recordIvrDecisionNodes failed for ${callId}:`, err));

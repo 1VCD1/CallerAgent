@@ -10,6 +10,7 @@ export const callQueue = new Queue('calls', { connection });
 interface CallOutcomeJob {
   callId: string;
   company: string;
+  phoneNumber: string;
   goal: string;
   humanReached: boolean;
   waitDurationSeconds?: number;

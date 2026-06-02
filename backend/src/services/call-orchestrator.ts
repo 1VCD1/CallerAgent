@@ -200,11 +200,11 @@ export class CallOrchestrator {
 
     const memoriesPromise = this.cachedMemories
       ? Promise.resolve(this.cachedMemories)
-      : getMemoryPatterns(this.call.company, this.call.goal).then(m => { this.cachedMemories = m; return m; });
+      : getMemoryPatterns(this.call.company, this.call.goal, this.call.phoneNumber).then(m => { this.cachedMemories = m; return m; });
 
     const patternsPromise = this.cachedDecisionTree
       ? Promise.resolve(this.cachedDecisionTree)
-      : getIvrDecisionTree(this.call.company).then(p => { this.cachedDecisionTree = p; return p; });
+      : getIvrDecisionTree(this.call.phoneNumber).then(p => { this.cachedDecisionTree = p; return p; });
 
     this.pendingDecision = Promise.all([memoriesPromise, patternsPromise])
       .then(([memories, patterns]) => {
@@ -471,6 +471,7 @@ export class CallOrchestrator {
     await recordCallOutcome({
       callId: this.call.id,
       company: this.call.company,
+      phoneNumber: this.call.phoneNumber,
       goal: this.call.goal,
       humanReached: this.call.humanReached,
       waitDurationSeconds: callRow?.wait_duration_seconds,
