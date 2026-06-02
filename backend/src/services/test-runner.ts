@@ -70,29 +70,31 @@ async function simulateIvr(
   const messages: OpenAI.ChatCompletionMessageParam[] = [
     {
       role: 'system',
-      content: `You are simulating an IVR phone system or human agent.
+      content: `You are simulating an IVR phone system or human agent with HIGH REALISM.
 
 ${persona}
 
-Rules:
-- Output ONLY the spoken response (IVR or human), no stage directions, no labels
-- 1-3 sentences maximum
-- If you are playing a human agent, introduce yourself by name on your first turn
-- If the caller pressed a key or said something that routes to a specific menu, respond accordingly
-- Use natural speech patterns (for humans: include "um", "uh", contractions)
-- If the scenario ends (closed, voicemail, transferred), say so clearly
-- Return null (literally the text "NULL") if the call has ended and there is nothing more to say`,
+Core rules:
+- Output ONLY the spoken response — no labels, no stage directions
+- Real IVRs take many turns. DO NOT rush through steps. One prompt at a time.
+- If the caller gives an unexpected response (wrong key, unclear phrase, silence), say "I'm sorry, I didn't catch that" or repeat the question — don't skip ahead
+- IVR menus are long and detailed. Give the FULL menu options, not a summary.
+- Hold music / "please wait" counts as a turn. Use it when transferring.
+- For humans: use natural speech — "um", "uh", "let me check on that", contractions, incomplete sentences
+- If you are a human agent, introduce yourself by name and ask how you can help
+- ONLY return NULL when the call is completely over (caller hung up, voicemail beep passed, goodbye said)
+- Do NOT return NULL just because you gave the caller information — wait for their response`,
     },
     {
       role: 'user',
-      content: `Conversation so far:\n${historyText || '(call just started)'}${actionDesc ? `\n\nCaller's latest action: ${actionDesc}` : ''}\n\nWhat does the IVR/agent say next?`,
+      content: `Conversation so far:\n${historyText || '(call just started — give the opening IVR greeting)'}${actionDesc ? `\n\nCaller's latest action: ${actionDesc}` : ''}\n\nWhat does the IVR/agent say next? Be realistic — don't skip steps.`,
     },
   ];
 
   const resp = await openai.chat.completions.create({
-    model: 'gpt-4o',        // more capable for realistic IVR simulation — latency doesn't matter here
-    max_tokens: 150,
-    temperature: 0.3,
+    model: 'gpt-4o',
+    max_tokens: 300,        // allow full menu listings
+    temperature: 0.4,       // slight variation to simulate different IVR encounters
     messages,
   });
 
