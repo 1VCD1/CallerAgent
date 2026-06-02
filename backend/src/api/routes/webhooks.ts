@@ -93,22 +93,21 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       // Record call outcome and IVR decision tree nodes for learning
       if (callRow[0]) {
         const endedReason = callRow[0].ended_reason; // now reflects refined reason
-        recordCallOutcome({
+        const memParams = {
           callId,
           company: callRow[0].company,
           phoneNumber: callRow[0].phone_number,
           goal: callRow[0].goal,
           humanReached: callRow[0].human_reached,
           waitDurationSeconds: callRow[0].wait_duration_seconds ?? undefined,
-        }).catch(err => console.error(`[Status] recordCallOutcome failed for ${callId}:`, err));
-
-        recordIvrDecisionNodes({
-          callId,
-          company: callRow[0].company,
-          phoneNumber: callRow[0].phone_number,
-          humanReached: callRow[0].human_reached,
-          endedReason,
-        }).catch(err => console.error(`[Status] recordIvrDecisionNodes failed for ${callId}:`, err));
+        };
+        console.log(`[Memory:Write] call=${callId.slice(0,8)} phone=${callRow[0].phone_number} human=${callRow[0].human_reached} reason=${endedReason}`);
+        recordCallOutcome(memParams).catch(err =>
+          console.error(`[Memory:Write:FAIL] recordCallOutcome call=${callId.slice(0,8)}:`, err)
+        );
+        recordIvrDecisionNodes({ callId, company: callRow[0].company, phoneNumber: callRow[0].phone_number, humanReached: callRow[0].human_reached, endedReason }).catch(err =>
+          console.error(`[Memory:Write:FAIL] recordIvrDecisionNodes call=${callId.slice(0,8)}:`, err)
+        );
       }
 
       // Fire post-call summary in background
@@ -452,11 +451,22 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         'next available', 'all right one moment', 'all right 1 moment',
       ];
       const recentIvrText = transcripts.slice(-4).map(t => t.text).join(' ').toLowerCase();
-      const transferPending = TRANSFER_PHRASES.some(p => recentIvrText.includes(p));
+      const matchedPhrase = TRANSFER_PHRASES.find(p => recentIvrText.includes(p));
+      const transferPending = !!matchedPhrase;
       const humanThreshold = transferPending ? 0.35 : 0.75;
-      if (transferPending) console.log(`[Gather] Transfer pending — lowering human threshold to ${humanThreshold}`);
 
+      // Comprehensive per-turn reliability log — all signals in one line for easy grep
+      const audio = context.audioAnalysis;
       const humanConf = action.humanConfidence ?? 0;
+      console.log(
+        `[Gather:SIGNALS] call=${callId.slice(0, 8)}` +
+        ` | speech="${(spokenText ?? '').slice(0, 60).replace(/\n/g, ' ')}"` +
+        ` | audio: frames=${audio?.framesAnalyzed ?? 0} conf=${audio ? Math.round(audio.confidence * 100) + '%' : 'N/A'} human=${audio?.isHuman ? 'Y' : 'N'} ring=${audio?.postRingPickup ? 'Y' : 'N'}` +
+        ` | transfer: pending=${transferPending ? 'Y' : 'N'}${matchedPhrase ? ` phrase="${matchedPhrase}"` : ''} threshold=${humanThreshold}` +
+        ` | llm: human_conf=${Math.round(humanConf * 100)}% action=${action.action}(${action.value ?? ''}) latency=${action.latencyMs ?? '?'}ms` +
+        ` | speaker_changed=${orchestrator?.getSpeakerChanged() ? 'Y' : 'N'}`
+      );
+
       const humanDetected = (action.isHuman || action.action === 'escalate_to_user') && humanConf >= humanThreshold;
       if (humanDetected) {
         console.log(`[Gather] Human detected! isHuman=${action.isHuman} action=${action.action} confidence=${humanConf}`);

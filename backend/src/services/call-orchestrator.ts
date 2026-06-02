@@ -148,6 +148,20 @@ export class CallOrchestrator {
 
     const audioNow = this.audioAnalyzer.analyze();
 
+    if (audioNow) {
+      console.log(
+        `[AudioAnalysis] call=${this.call.id.slice(0,8)}` +
+        ` frames=${audioNow.framesAnalyzed}` +
+        ` rms=${Math.round(audioNow.rmsVariance / 1000)}k` +
+        ` pitch=${audioNow.pitchVariance.toFixed(2)}` +
+        ` conf=${Math.round(audioNow.confidence * 100)}%` +
+        ` human=${audioNow.isHuman ? 'Y' : 'N'}` +
+        ` ring=${audioNow.postRingPickup ? 'Y' : 'N'}`
+      );
+    } else {
+      console.log(`[AudioAnalysis] call=${this.call.id.slice(0,8)} frames=0 — not enough data yet`);
+    }
+
     // Ring-tone pickup: transfer ring heard → someone answered → almost certainly human
     if (audioNow?.postRingPickup && this.stateMachine.can('human_detected')) {
       console.log(`[Orchestrator] Post-ring-tone pickup for call ${this.call.id} — escalating immediately`);

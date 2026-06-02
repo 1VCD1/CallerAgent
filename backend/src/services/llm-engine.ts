@@ -106,7 +106,7 @@ export async function decideLLMAction(context: CallContext): Promise<LLMAction> 
       const isTransient = (err?.status === 503) ||
         (err?.status === 429 && err?.error?.type !== 'insufficient_quota');
       if (!isTransient) throw err;
-      console.warn(`[LLM] Attempt ${attempt + 1} transient error (${err.status}), retrying…`);
+      console.warn(`[LLM:RETRY] call=${context.callId.slice(0,8)} attempt=${attempt + 1} status=${err.status} — retrying in ${RETRY_DELAYS[attempt + 1] ?? 0}ms`);
     }
   }
   throw lastErr;
@@ -152,6 +152,10 @@ ${ctx.userInfo.phoneNumber ? `  Callback phone: ${ctx.userInfo.phoneNumber} ← 
       return 'name intro + help offer';
     return null;
   })();
+
+  if (undeniableSignal) {
+    console.log(`[LLM:UNDENIABLE] call=${ctx.callId.slice(0,8)} signal="${undeniableSignal}" utterance="${(ctx.currentIvrUtterance ?? '').slice(0,80)}"`);
+  }
 
   const humanOverrideBlock = undeniableSignal
     ? `\n🚨🚨🚨 MANDATORY OVERRIDE — LIVE HUMAN DETECTED 🚨🚨🚨
