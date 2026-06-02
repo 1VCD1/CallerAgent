@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { query, queryOne } from '../../db/client';
+import { runAllTests } from '../../services/test-runner';
 
 const debugPlugin: FastifyPluginAsync = async (fastify) => {
 
@@ -311,6 +312,74 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
       transcripts,
       hasMemoryPatterns: parseInt(memCount?.count ?? '0', 10) > 0,
     };
+  });
+
+  // ── Eval / Test Framework ─────────────────────────────────────────────────
+
+  // List all scenarios
+  fastify.get('/debug/test/scenarios', async () => {
+    return query<any>(`SELECT * FROM test_scenarios ORDER BY created_at`);
+  });
+
+  // Create a scenario
+  fastify.post('/debug/test/scenarios', async (request) => {
+    const b = request.body as any;
+    return queryOne<any>(
+      `INSERT INTO test_scenarios (name, company, goal, ivr_persona, expected_outcome, has_human, max_turns, tags)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [b.name, b.company, b.goal ?? 'reach_human', b.ivr_persona,
+       b.expected_outcome, b.has_human ?? false, b.max_turns ?? 20, b.tags ?? []]
+    );
+  });
+
+  // Delete a scenario
+  fastify.delete('/debug/test/scenarios/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    await query(`DELETE FROM test_scenarios WHERE id = $1`, [id]);
+    return { ok: true };
+  });
+
+  // Trigger a test run (async — returns runId immediately, run happens in background)
+  fastify.post('/debug/test/run', async () => {
+    const runId = runAllTests('manual').catch(err =>
+      console.error('[TestRunner] Run failed:', err)
+    );
+    return { status: 'started' };
+  });
+
+  // List past runs
+  fastify.get('/debug/test/runs', async () => {
+    return query<any>(`SELECT * FROM test_runs ORDER BY started_at DESC LIMIT 20`);
+  });
+
+  // Results for a specific run
+  fastify.get('/debug/test/runs/:runId', async (request) => {
+    const { runId } = request.params as { runId: string };
+    const [run, results] = await Promise.all([
+      queryOne<any>(`SELECT * FROM test_runs WHERE id = $1`, [runId]),
+      query<any>(`
+        SELECT tr.*, ts.name AS scenario_name, ts.company, ts.has_human, ts.tags
+        FROM test_results tr
+        JOIN test_scenarios ts ON ts.id = tr.scenario_id
+        WHERE tr.run_id = $1
+        ORDER BY tr.created_at
+      `, [runId]),
+    ]);
+    return { run, results };
+  });
+
+  // Latest run summary (for dashboard polling)
+  fastify.get('/debug/test/latest', async () => {
+    const run = await queryOne<any>(`SELECT * FROM test_runs ORDER BY started_at DESC LIMIT 1`);
+    if (!run) return null;
+    const results = await query<any>(`
+      SELECT tr.*, ts.name AS scenario_name, ts.company, ts.has_human, ts.tags
+      FROM test_results tr
+      JOIN test_scenarios ts ON ts.id = tr.scenario_id
+      WHERE tr.run_id = $1
+      ORDER BY tr.created_at
+    `, [run.id]);
+    return { run, results };
   });
 };
 

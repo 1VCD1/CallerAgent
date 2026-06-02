@@ -111,6 +111,53 @@ CREATE INDEX IF NOT EXISTS idx_ivr_notes_phone ON company_ivr_notes(phone_number
 ALTER TABLE user_company_notes ADD COLUMN IF NOT EXISTS phone_number TEXT;
 CREATE INDEX IF NOT EXISTS idx_user_notes_phone ON user_company_notes(phone_number);
 
+-- ── Evaluation / Test Framework ──────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS test_scenarios (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  company TEXT NOT NULL,
+  goal TEXT NOT NULL DEFAULT 'reach_human',
+  ivr_persona TEXT NOT NULL,        -- system prompt describing how this IVR behaves
+  expected_outcome TEXT NOT NULL,   -- 'human_reached' | 'outside_hours' | 'no_human_path' | etc.
+  has_human BOOLEAN NOT NULL DEFAULT false,  -- does this scenario end with a real human?
+  max_turns INTEGER NOT NULL DEFAULT 20,
+  tags TEXT[] DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS test_runs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  triggered_by TEXT DEFAULT 'manual',
+  total_scenarios INTEGER NOT NULL DEFAULT 0,
+  passed INTEGER NOT NULL DEFAULT 0,
+  failed INTEGER NOT NULL DEFAULT 0,
+  accuracy FLOAT,                   -- passed / total
+  human_detection_rate FLOAT,       -- % of has_human scenarios where human was escalated
+  false_positive_rate FLOAT,        -- % of no-human scenarios that incorrectly escalated
+  avg_turns FLOAT,
+  started_at TIMESTAMPTZ DEFAULT NOW(),
+  ended_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS test_results (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  run_id UUID NOT NULL REFERENCES test_runs(id) ON DELETE CASCADE,
+  scenario_id UUID NOT NULL REFERENCES test_scenarios(id) ON DELETE CASCADE,
+  passed BOOLEAN NOT NULL,
+  actual_outcome TEXT NOT NULL,
+  expected_outcome TEXT NOT NULL,
+  turns INTEGER NOT NULL,
+  human_detected BOOLEAN NOT NULL DEFAULT false,
+  false_positive BOOLEAN NOT NULL DEFAULT false,
+  transcript JSONB NOT NULL DEFAULT '[]',   -- [{role:'IVR'|'AI', text, turn}]
+  error TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_test_results_run ON test_results(run_id);
+CREATE INDEX IF NOT EXISTS idx_test_results_scenario ON test_results(scenario_id);
+
 -- Adaptive Memory Patterns (THE CORE PRODUCT ASSET)
 CREATE TABLE IF NOT EXISTS memory_patterns (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
