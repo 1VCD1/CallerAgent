@@ -55,7 +55,7 @@ function buildContextMessage(ctx: CallContext): string {
     ? `\n⚡ USER INFO — USE THIS PROACTIVELY to answer IVR questions. Do NOT wait to be asked twice.
 ${ctx.userInfo.name ? `  Name: ${ctx.userInfo.name}` : ''}
 ${ctx.userInfo.birthday ? `  Date of birth: ${ctx.userInfo.birthday}` : ''}
-${ctx.userInfo.phoneNumber ? `  Callback phone: ${ctx.userInfo.phoneNumber} ← say this if IVR asks for a callback number` : ''}`.trim()
+${ctx.userInfo.phoneNumber ? `  Phone number: ${ctx.userInfo.phoneNumber} ← say this digit-by-digit if IVR asks for "the number you are calling about", "your phone number", "10-digit number", or a callback number` : ''}`.trim()
     : '';
 
   const confidenceHistory = ctx.recentHumanConfidences && ctx.recentHumanConfidences.length > 0
