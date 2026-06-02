@@ -77,7 +77,7 @@ TERMINAL SIGNALS — use end_call IMMEDIATELY when you detect any of these, rega
 These are DEAD ENDS — do not retry, do not wait, do not try a different phrase. End immediately.
 The above list is illustrative, not exhaustive — use judgment for similar signals you haven't seen before.`;
 
-export async function decideLLMAction(context: CallContext): Promise<LLMAction> {
+export async function decideLLMAction(context: CallContext, dryRun = false): Promise<LLMAction> {
   const userMessage = buildContextMessage(context);
   const langConfig = getLang(context.language);
 
@@ -99,7 +99,7 @@ export async function decideLLMAction(context: CallContext): Promise<LLMAction> 
       const text = response.choices[0]?.message?.content ?? '';
       const action = parseAction(text);
       action.latencyMs = Date.now() - llmStart;
-      await persistAction(context.callId, action);
+      if (!dryRun) await persistAction(context.callId, action);
       return action;
     } catch (err: any) {
       lastErr = err;

@@ -130,7 +130,7 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
         audioAnalysis: null,
       };
 
-      const action = await decideLLMAction(context);
+      const action = await decideLLMAction(context, true); // dryRun: no DB writes during test
       lastAction = action;
       recentHumanConfidences = [...recentHumanConfidences.slice(-9), action.humanConfidence ?? 0];
 
