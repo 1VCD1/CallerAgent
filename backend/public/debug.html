@@ -52,7 +52,7 @@
       <!-- Overall Rate -->
       <div>
         <div class="text-slate-400 text-sm font-medium mb-1">Overall Rate</div>
-        <div class="text-slate-500 text-xs mb-3">human reached ÷ all navigated calls</div>
+        <div class="text-slate-500 text-xs mb-3">human reached ÷ all call attempts (incl. busy, voicemail, outside hrs)</div>
         <div class="flex items-end gap-3 mb-2">
           <div id="ns-overall-value" class="text-5xl font-bold">—</div>
           <div id="ns-overall-sub" class="text-slate-500 text-xs pb-1"></div>
@@ -244,12 +244,12 @@ async function loadOverview() {
 
 function renderNorthStar(f) {
   if (!f) return;
-  const navigated    = parseInt(f.navigated)    || 0;
+  const initiated    = parseInt(f.initiated)    || 0;
   const navigable    = parseInt(f.navigable)    || 0;
   const humanReached = parseInt(f.human_reached) || 0;
 
-  const overallRate  = navigated  ? Math.round(humanReached / navigated  * 100) : null;
-  const aiRate       = navigable  ? Math.round(humanReached / navigable  * 100) : null;
+  const overallRate  = initiated ? Math.round(humanReached / initiated * 100) : null;
+  const aiRate       = navigable ? Math.round(humanReached / navigable * 100) : null;
 
   const color = r => r === null ? '#94a3b8' : r >= 60 ? '#10b981' : r >= 35 ? '#f59e0b' : '#ef4444';
 
@@ -263,7 +263,7 @@ function renderNorthStar(f) {
       : 'No navigated calls yet';
   };
 
-  setRate('ns-overall-value', 'ns-overall-bar', 'ns-overall-sub', overallRate, navigated, 'navigated calls');
+  setRate('ns-overall-value', 'ns-overall-bar', 'ns-overall-sub', overallRate, initiated, 'call attempts');
   setRate('ns-ai-value',      'ns-ai-bar',      'ns-ai-sub',      aiRate,      navigable, 'reachable calls');
 }
 
