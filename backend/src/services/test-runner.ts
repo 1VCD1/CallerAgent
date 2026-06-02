@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne } from '../db/client';
 import { decideLLMAction } from './llm-engine';
 import { config } from '../config';
@@ -106,8 +107,9 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
       const currentIvrUtterance = transcript.filter(t => t.role === 'IVR').slice(-1)[0]?.text ?? '';
 
       // Build a minimal CallContext for the real decision engine
+      const callId = uuidv4();
       const context: CallContext = {
-        callId: `test-${scenario.id}-${Date.now()}`,
+        callId,
         company: scenario.company,
         phoneNumber: 'test',
         goal: scenario.goal,
