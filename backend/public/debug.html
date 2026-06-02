@@ -820,7 +820,13 @@ function renderDetailHeader(call) {
     <div class="text-slate-400 text-sm">${dur ? fmtSecs(dur) : '—'}</div>
     <div class="text-slate-500 text-xs">${new Date(call.started_at).toLocaleString()}</div>
     ${call.goal !== 'reach_human' ? `<div class="badge bg-slate-700 text-slate-300">${call.goal}</div>` : ''}
-    <div class="ml-auto text-slate-600 text-xs font-mono">${call.id.slice(0,8)}…</div>
+    <div class="ml-auto flex items-center gap-2">
+      <div class="text-slate-600 text-xs font-mono">${call.id.slice(0,8)}…</div>
+      <button onclick="generateScenarioFromCall('${call.id}')"
+        class="text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1 rounded transition-colors">
+        + Add to Tests
+      </button>
+    </div>
   `;
 }
 
@@ -1535,6 +1541,35 @@ function renderRunHistory(runs) {
       },
     },
   });
+}
+
+async function generateScenarioFromCall(callId) {
+  const btn = event.target;
+  const orig = btn.textContent;
+  btn.textContent = 'Generating...';
+  btn.disabled = true;
+  try {
+    const data = await api(`/debug/calls/${callId}`);
+    const transcript = (data.transcripts ?? []).map(t => `${t.speaker}: ${t.text}`).join('\n');
+    const r = await fetch('/debug/test/generate-scenario', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        callId, transcript, company: data.call.company, goal: data.call.goal,
+        outcome: data.call.ended_reason ?? data.call.status,
+        hasHuman: !!data.call.human_reached,
+      }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    btn.textContent = 'Added!';
+    btn.classList.add('bg-emerald-800', 'text-emerald-200');
+    setTimeout(() => {
+      btn.textContent = orig; btn.disabled = false;
+      btn.classList.remove('bg-emerald-800', 'text-emerald-200');
+    }, 3000);
+  } catch(e) {
+    btn.textContent = 'Error';
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000);
+  }
 }
 
 async function generateScenario() {
