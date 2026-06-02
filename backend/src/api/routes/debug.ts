@@ -43,11 +43,12 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
           COUNT(*) FILTER (WHERE human_reached
             OR ended_reason IN ('callback_number_given','callback_offered'))           AS human_reached,
           -- AI performance denominator: navigated calls where success was theoretically possible
+          -- excludes impossible outcomes AND user_cancelled (user chose to stop, not AI failure)
           COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED','BRIDGED')
             AND COALESCE(ended_reason,'') NOT IN
               ('server_restart','dial_failed','busy','no-answer',
                'outside_hours','voicemail','voicemail_left','invalid_number',
-               'callback_caller_id'))                                                  AS navigable
+               'callback_caller_id','user_cancelled'))                                 AS navigable
         FROM calls
         WHERE started_at > NOW() - INTERVAL '7 days'
       `),
@@ -70,7 +71,7 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
           SELECT c2.id AS call_id FROM calls c2
           WHERE c2.id = c.id
             AND c2.status IN ('ENDED','FAILED','BRIDGED')
-            AND COALESCE(c2.ended_reason,'') NOT IN ('server_restart','dial_failed','busy','no-answer')
+            AND COALESCE(c2.ended_reason,'') NOT IN ('server_restart','dial_failed','busy','no-answer','user_cancelled')
           LIMIT 1
         ) nav_flag ON true
         LEFT JOIN LATERAL (
