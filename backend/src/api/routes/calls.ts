@@ -133,7 +133,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
     }
 
     // Guard: per-user daily call limit
-    const DAILY_CALL_LIMIT = 10;
+    const DAILY_CALL_LIMIT = 999;
     const usageRow = await queryOne<{ count: string }>(
       `SELECT COUNT(*) AS count FROM calls WHERE user_id = $1 AND started_at > NOW() - INTERVAL '24 hours'`,
       [userId]
