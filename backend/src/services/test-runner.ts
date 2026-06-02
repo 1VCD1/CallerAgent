@@ -14,6 +14,13 @@ import {
 
 const openai = new OpenAI({ apiKey: config.openai.apiKey });
 
+// Default test user — real info so AI behaves like in production
+const DEFAULT_TEST_USER = {
+  name: 'Wayne Tang',
+  phoneNumber: '+18582229375',
+  birthday: undefined as string | undefined,
+};
+
 export interface TestScenario {
   id: string;
   name: string;
@@ -24,6 +31,7 @@ export interface TestScenario {
   hasHuman: boolean;
   maxTurns: number;
   tags: string[];
+  userInfo?: { name?: string; phoneNumber?: string; birthday?: string };
 }
 
 interface TurnRecord {
@@ -140,10 +148,11 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
 
       // Build a minimal CallContext for the real decision engine
       const callId = uuidv4();
+      const testUser = { ...DEFAULT_TEST_USER, ...(scenario.userInfo ?? {}) };
       const context: CallContext = {
         callId,
         company: scenario.company,
-        phoneNumber: 'test',
+        phoneNumber: testUser.phoneNumber ?? 'test',
         goal: scenario.goal,
         language: 'en',
         currentTranscript: transcript.map(t => `${t.role}: ${t.text}`).join('\n'),
@@ -160,6 +169,7 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
         recentHumanConfidences,
         speakerChanged: false,
         audioAnalysis: null,
+        userInfo: testUser,
       };
 
       const action = await decideLLMAction(context, true); // dryRun: no DB writes during test
@@ -235,6 +245,7 @@ export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
     id: string; name: string; company: string; goal: string;
     ivr_persona: string; expected_outcome: string;
     has_human: boolean; max_turns: number; tags: string[];
+    user_info: { name?: string; phoneNumber?: string; birthday?: string } | null;
   }>(`SELECT * FROM test_scenarios ORDER BY created_at`);
 
   if (scenarios.length === 0) return 'no_scenarios';
@@ -262,6 +273,7 @@ export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
       hasHuman: row.has_human,
       maxTurns: row.max_turns,
       tags: row.tags ?? [],
+      userInfo: row.user_info ?? undefined,
     };
 
     console.log(`[TestRunner] Running: ${scenario.name}`);

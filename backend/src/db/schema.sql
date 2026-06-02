@@ -123,8 +123,10 @@ CREATE TABLE IF NOT EXISTS test_scenarios (
   has_human BOOLEAN NOT NULL DEFAULT false,  -- does this scenario end with a real human?
   max_turns INTEGER NOT NULL DEFAULT 20,
   tags TEXT[] DEFAULT '{}',
+  user_info JSONB DEFAULT NULL,     -- {name, phoneNumber, birthday} — overrides default test user
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE test_scenarios ADD COLUMN IF NOT EXISTS user_info JSONB DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS test_runs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
