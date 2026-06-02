@@ -16,7 +16,7 @@ export class DeepgramTranscriptionSession {
   private language: string;
   private stopped = false;
   private reconnectAttempt = 0;
-  private static readonly MAX_RECONNECTS = 3;
+  private static readonly MAX_RECONNECTS = 10;
 
   constructor(callId: string, onTranscript: TranscriptCallback, language = 'en-US') {
     this.callId = callId;
@@ -40,6 +40,7 @@ export class DeepgramTranscriptionSession {
 
     this.dgSocket.on(LiveTranscriptionEvents.Open, () => {
       console.log(`[Deepgram] Session opened for call ${this.callId}`);
+      this.reconnectAttempt = 0; // reset on successful connection
     });
 
     this.dgSocket.on(LiveTranscriptionEvents.Transcript, async (data) => {
@@ -72,10 +73,12 @@ export class DeepgramTranscriptionSession {
       console.error(`[Deepgram] Error for call ${this.callId}:`, err);
     });
 
-    this.dgSocket.on(LiveTranscriptionEvents.Close, () => {
-      console.log(`[Deepgram] Session closed for call ${this.callId}`);
+    this.dgSocket.on(LiveTranscriptionEvents.Close, (event: any) => {
+      const code = event?.code ?? '?';
+      const reason = event?.reason ? ` reason="${event.reason}"` : '';
+      console.log(`[Deepgram] Session closed for call ${this.callId} — code:${code}${reason}`);
       if (!this.stopped && this.reconnectAttempt < DeepgramTranscriptionSession.MAX_RECONNECTS) {
-        const delay = Math.pow(2, this.reconnectAttempt) * 1000;
+        const delay = Math.min(Math.pow(2, this.reconnectAttempt) * 1000, 8000);
         this.reconnectAttempt++;
         console.log(`[Deepgram] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempt}/${DeepgramTranscriptionSession.MAX_RECONNECTS})`);
         setTimeout(() => { if (!this.stopped) this.start(); }, delay);
