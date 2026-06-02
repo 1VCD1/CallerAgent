@@ -8,7 +8,7 @@ import { decideLLMAction } from '../../services/llm-engine';
 import { config } from '../../config';
 import { CallContext, ActionRecord, CallStatus } from '../../types';
 import { getLang, buildVoicemailMessage } from '../../languages';
-import { isOutsideBusinessHours, isCallbackOffer, isVoicemailGreeting, isInvalidOrDisconnected, extractMenuKeys } from '../../services/human-detector';
+import { isOutsideBusinessHours, isCallbackOffer, isVoicemailGreeting, isInvalidOrDisconnected, extractMenuKeys, isWrongNumber, extractSuggestedNumber } from '../../services/human-detector';
 import { generateCallSummary, getCompanyIvrNotes } from '../../services/call-summarizer';
 import { emitCallStatus } from '../../services/call-events';
 import { logDebug } from '../../services/debug-logger';
@@ -143,6 +143,26 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'outside_hours' WHERE id = $1`,
         [callId]
       );
+      emitCallStatus(callId, 'ENDED');
+      if (orchestrator) activeOrchestrators.delete(callId);
+      reply.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
+      return;
+    }
+
+    // Wrong number — IVR is directing user to call a different number
+    if (spokenText && isWrongNumber(spokenText)) {
+      const suggested = extractSuggestedNumber(spokenText);
+      console.log(`[Gather] Wrong number detected — suggested: ${suggested ?? 'unknown'} — ending call ${callId}`);
+      await query(
+        `UPDATE calls SET status = 'ENDED', ended_at = NOW(), ended_reason = 'wrong_number' WHERE id = $1`,
+        [callId]
+      );
+      if (suggested) {
+        await query(
+          `INSERT INTO call_debug_logs (call_id, event_type, data) VALUES ($1, 'wrong_number', $2)`,
+          [callId, JSON.stringify({ suggested_number: suggested, ivr_text: spokenText })]
+        );
+      }
       emitCallStatus(callId, 'ENDED');
       if (orchestrator) activeOrchestrators.delete(callId);
       reply.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);

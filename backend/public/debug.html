@@ -453,7 +453,7 @@ function renderDetectionQuality(detectionData) {
 const EXCLUDED_FROM_AI_PERF = new Set([
   'user_cancelled','outside_hours','voicemail','voicemail_left',
   'invalid_number','callback_caller_id','busy','no-answer',
-  'server_restart','dial_failed'
+  'server_restart','dial_failed','wrong_number'
 ]);
 
 function renderGapAnalysis(f, outcomes) {
@@ -488,6 +488,7 @@ function renderGapAnalysis(f, outcomes) {
       voicemail_left:  'No live agent — left voicemail',
       invalid_number:  'Phone number invalid or disconnected',
       callback_caller_id: 'Callback accepted but caller ID used (not user number)',
+      wrong_number: 'IVR directed to a different phone number — update the company number',
       busy:            'Line was busy',
       'no-answer':     'Phone rang but no one answered',
       server_restart:  'Server restarted — call interrupted',
@@ -853,7 +854,19 @@ function analyzeCulprits(debugEvents, call, hasMemoryPatterns) {
     });
   }
 
-  // 8. No historical context
+  // 8. Wrong number — IVR redirected to a different number
+  const wrongNumEvent = debugEvents.find(e => e.event_type === 'wrong_number');
+  if (call.ended_reason === 'wrong_number' || wrongNumEvent) {
+    const suggested = wrongNumEvent?.data?.suggested_number;
+    culprits.push({
+      severity: 'critical',
+      title: 'Wrong phone number — IVR directed caller elsewhere',
+      detail: wrongNumEvent?.data?.ivr_text ?? 'IVR indicated this is not the correct number to call.',
+      fix: suggested ? `Try calling ${suggested} instead` : 'Check the IVR text above for the correct number',
+    });
+  }
+
+  // 9. No historical context
   if (!hasMemoryPatterns && !call.human_reached) {
     culprits.push({
       severity: 'info',
@@ -1079,7 +1092,7 @@ function renderTurn(turn, n) {
 function outcomeLabel(outcome) {
   const map = {
     human_reached: '✅ Human reached', no_human_path: '❌ No human path',
-    outside_hours: '🕐 Outside hours', voicemail: '📭 Voicemail',
+    wrong_number: '📵 Wrong number', outside_hours: '🕐 Outside hours', voicemail: '📭 Voicemail',
     voicemail_left: '📬 Voicemail left', callback_offered: '📞 Callback offered',
     callback_number_given: '📞✅ Callback (number given)', callback_caller_id: '📞⚠️ Callback (caller ID used)',
     max_attempts: '🔄 Max attempts', low_confidence: '🤔 Low confidence',
@@ -1098,6 +1111,7 @@ function outcomePill(call) {
   const colors = {
     human_reached: 'bg-emerald-900 text-emerald-300',
     no_human_path: 'bg-red-900 text-red-300',
+    wrong_number: 'bg-orange-900 text-orange-300',
     max_attempts: 'bg-red-900 text-red-300',
     outside_hours: 'bg-amber-900 text-amber-300',
     voicemail: 'bg-amber-900 text-amber-300',

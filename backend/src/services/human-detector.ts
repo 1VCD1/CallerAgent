@@ -166,9 +166,42 @@ export function isOutsideBusinessHours(transcript: string): boolean {
     /call.{0,15}back.{0,20}during.{0,20}(business|support|regular) hours/i,
     /currently (closed|unavailable) for (phone|calls?)/i,
     /not (available|open).{0,20}(at this time|right now).{0,30}hours/i,
-    /our (office|support|phone) (is|are) (closed|unavailable)/i,
+    /our (office|support|phone|centers?) (is|are) (closed|unavailable)/i,
+    /we are currently (closed|unavailable)/i,
+    /(centers?|locations?|offices?) are currently (closed|unavailable)/i,
+    /currently closed.{0,50}(visit|please|app|website|vzw|online)/i,
   ];
   return patterns.some(p => p.test(transcript));
+}
+
+export function isWrongNumber(transcript: string): boolean {
+  const patterns = [
+    /please (call|dial|try).{0,20}(\d[\d\s\-\.]{6,}|\b1.?800\b)/i,
+    /call.{0,20}(us|our|the).{0,20}at.{0,20}(\d[\d\s\-\.]{6,}|\b1.?800\b)/i,
+    /the (correct|right|proper) number (is|to call)/i,
+    /please (contact|reach).{0,20}(at|by calling).{0,20}\d/i,
+    /you('ve| have) reached the wrong/i,
+    /this (is|isn't) (not )?the (correct|right) (number|line|department)/i,
+    /number (for|to reach).{0,30}is.{0,20}\d/i,
+    /call.{0,10}(again|instead).{0,30}(that is|at|using)/i,
+  ];
+  return patterns.some(p => p.test(transcript));
+}
+
+export function extractSuggestedNumber(transcript: string): string | null {
+  // Try explicit phone number patterns first
+  const numMatch = transcript.match(/\b((\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4})\b/);
+  if (numMatch) return numMatch[1].replace(/\s+/g, '-');
+
+  // Vanity numbers like "1-800-VERIZON" or "1 800 Verizon"
+  const vanityMatch = transcript.match(/\b(1[-.\s]?800[-.\s]?[A-Z]{2,8})\b/i);
+  if (vanityMatch) return vanityMatch[1].toUpperCase();
+
+  // Raw "call [phrase] again" hint
+  const hintMatch = transcript.match(/(?:please call|call us at|dial)\s+(.{5,40}?)(?:\.|,|$)/i);
+  if (hintMatch) return hintMatch[1].trim();
+
+  return null;
 }
 
 export function isCallbackOffer(transcript: string): boolean {
