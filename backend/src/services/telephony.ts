@@ -10,7 +10,11 @@ export interface OutboundCallOptions {
 
 export async function initiateOutboundCall(options: OutboundCallOptions): Promise<string> {
   const gatherUrl = `${config.app.webhookBaseUrl}/webhooks/twilio/gather?callId=${options.callId}`;
-  const streamUrl = `wss://${config.app.baseUrl.replace(/^https?:\/\//, '')}/ws/audio/${options.callId}`;
+  // Derive WebSocket host from webhookBaseUrl (known-good) rather than APP_BASE_URL
+  // which may default to localhost:3000 if not set in the deployment environment
+  const wsHost = config.app.webhookBaseUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  const streamUrl = `wss://${wsHost}/ws/audio/${options.callId}`;
+  console.log(`[Telephony] Stream URL: ${streamUrl}`);
 
   const call = await client.calls.create({
     to: options.to,
