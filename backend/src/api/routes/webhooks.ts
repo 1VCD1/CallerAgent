@@ -441,9 +441,17 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
         }
       }
 
-      // Lower detection threshold if a transfer was just announced
-      const TRANSFER_PHRASES = ['transferring you', 'connecting you', 'let me transfer', "i'll transfer", 'one moment while i connect', 'connect you to'];
-      const recentIvrText = transcripts.slice(-3).map(t => t.text).join(' ').toLowerCase();
+      // Lower detection threshold if a transfer was just announced or hold music is playing
+      const TRANSFER_PHRASES = [
+        'transferring you', 'connecting you', 'let me transfer', "i'll transfer",
+        'one moment while i connect', 'connect you to', 'i would like to connect you',
+        'let me connect you', 'i will connect you', 'transfer you to',
+        // Hold phrases that precede a human pickup
+        'moment please', 'thank you for holding', 'thank you for your patience',
+        'please continue to hold', 'your call is very important',
+        'next available', 'all right one moment', 'all right 1 moment',
+      ];
+      const recentIvrText = transcripts.slice(-4).map(t => t.text).join(' ').toLowerCase();
       const transferPending = TRANSFER_PHRASES.some(p => recentIvrText.includes(p));
       const humanThreshold = transferPending ? 0.35 : 0.75;
       if (transferPending) console.log(`[Gather] Transfer pending — lowering human threshold to ${humanThreshold}`);

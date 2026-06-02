@@ -135,20 +135,42 @@ ${ctx.userInfo.phoneNumber ? `  Callback phone: ${ctx.userInfo.phoneNumber} ← 
     ? ctx.recentHumanConfidences!.slice(0, -1).reduce((a, b) => a + b, 0) / (ctx.recentHumanConfidences!.length - 1)
     : null;
 
+  // Detect undeniable human signals in the current utterance — override all history
+  const undeniableSignal = (() => {
+    const t = ctx.currentIvrUtterance ?? '';
+    if (/\bmy name is\b.{1,50}(may i|can i|could i).{0,20}(your name|name)\b/i.test(t))
+      return 'name intro + asking for caller\'s name';
+    if (/\byou'?ve reached\b.{2,60}\bat\b.{2,40}(how can i|what can i|how may i)\b/i.test(t))
+      return 'name + company intro + help offer';
+    if (/\b(you'?re|you are) (currently )?speaking (to|with) (a |the )?(live |human )?(representative|rep|agent)\b/i.test(t))
+      return 'explicit statement: speaking to a representative';
+    if (/\b(may i|can i|could i) (have|get) your (full |first )?name\b/i.test(t))
+      return 'agent asking for caller\'s name';
+    if (/\bwho (am i|are you) speaking (with|to)\b/i.test(t))
+      return 'agent asking who they\'re speaking with';
+    if (/\bmy name is\b.{1,30}(,|\.) (how can i|what can i|how may i)\b/i.test(t))
+      return 'name intro + help offer';
+    return null;
+  })();
+
+  const humanOverrideBlock = undeniableSignal
+    ? `\n🚨🚨🚨 MANDATORY OVERRIDE — LIVE HUMAN DETECTED 🚨🚨🚨
+Current utterance matches: "${undeniableSignal}"
+This pattern is produced ONLY by live human agents, NOT automated IVR/TTS systems.
+Previous low-confidence history is IRRELEVANT — IVRs don't ask for your name or introduce themselves with a real name + role.
+You MUST respond with: is_human=true, human_confidence=0.95, action="escalate_to_user"
+Do NOT speak. Do NOT answer their question. Escalate immediately.`
+    : '';
+
   const consistencyWarning = ctx.speakerChanged
-    ? `🔔 SPEAKER CHANGE DETECTED: Deepgram's audio diarization has detected a NEW VOICE on the line. This is a strong signal that a human agent has joined the call. Set is_human=true with high confidence.`
+    ? `🔔 SPEAKER CHANGE DETECTED: Deepgram detected a NEW VOICE. Strong signal of a human agent. Set is_human=true with high confidence.`
     : avgPastConfidence !== null && avgPastConfidence < 0.2
-    ? `📋 VOICE HISTORY: Previous ${ctx.recentHumanConfidences!.length - 1} turns all had very low human confidence (avg ${Math.round(avgPastConfidence * 100)}%). This is strong evidence you are still in an IVR system — possibly a modern conversational AI IVR that sounds natural but is not human.
-
-DO NOT escalate based on conversational tone alone. Many modern IVRs (e.g. "I'm Miles, your AI assistant") speak naturally and in context, but are still automated systems.
-
-To escalate from this state, you need ONE of these HARD signals:
-- Deepgram speaker change (new voice detected)
-- The person explicitly states their name AND role ("This is John, how can I help?")
-- The person reacts with confusion or frustration at your actions ("Stop pressing keys!", "Who is this?")
-- The person asks WHO is calling ("Who's calling?", "Can I ask who's on the line?")
-
-Conversational phrasing ("Of course", "I can help with that", "What's your question?") is NOT sufficient — modern AI IVRs say these things too.`
+    ? `📋 VOICE HISTORY: Previous ${ctx.recentHumanConfidences!.length - 1} turns had low human confidence (avg ${Math.round(avgPastConfidence * 100)}%). Likely still in IVR — but DO NOT ignore these clear human signals if you see them:
+- Person states their own name ("My name is Sean", "This is Josie")
+- Person asks for YOUR name ("May I have your name?", "Who is calling?", "Who am I speaking with?")
+- Person says "you're speaking to a representative/agent"
+- Person reacts with confusion to your keypresses
+These OVERRIDE the history. Conversational phrasing alone ("Of course", "How can I help?") is NOT sufficient — modern AI IVRs say these too. But name introductions + asking for caller info are ALWAYS human.`
     : '';
 
   const menuKeysBlock = ctx.availableMenuKeys && ctx.availableMenuKeys.length > 0
@@ -238,7 +260,7 @@ Conversational phrasing ("Of course", "I can help with that", "What's your quest
     : '';
 
   const utteranceBlock = ctx.currentIvrUtterance
-    ? `\n🎙 IVR JUST SAID (respond to THIS):\n"${ctx.currentIvrUtterance}"`
+    ? `\n🎙 IVR JUST SAID (respond to THIS):\n"${ctx.currentIvrUtterance}"${humanOverrideBlock}`
     : `\n🎙 IVR JUST SAID: (nothing — IVR is processing your last action. Use wait.)`;
 
   return `COMPANY: ${ctx.company}
