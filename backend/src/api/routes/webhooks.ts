@@ -38,7 +38,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
   // Twilio call status webhook
   fastify.post('/webhooks/twilio/status', { preHandler: validateTwilioSignature }, async (request, reply) => {
     const body = request.body as Record<string, string>;
-    const { CallSid, CallStatus } = body;
+    const { CallSid, CallStatus, ErrorCode } = body;
 
     const call = await query<{ id: string }>(
       `SELECT id FROM calls WHERE twilio_call_sid = $1`,
@@ -55,11 +55,17 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       await orchestrator.onCallConnected();
     } else if (['completed', 'failed', 'busy', 'no-answer'].includes(CallStatus)) {
       console.log(`[Status] Call ${callId} ended — Twilio status: ${CallStatus}`);
+      // Map Twilio ErrorCode to a more specific ended_reason when possible
+      const INVALID_NUMBER_CODES = new Set(['13225','13212','13214','21217','21401','21614','15001','21219']);
+      const derivedReason = CallStatus === 'completed' ? 'completed'
+        : (CallStatus === 'failed' && ErrorCode && INVALID_NUMBER_CODES.has(ErrorCode)) ? 'invalid_number'
+        : CallStatus === 'failed' ? 'dial_failed'
+        : CallStatus; // 'busy', 'no-answer'
       await query(
         `UPDATE calls SET status = 'ENDED', ended_at = NOW(),
          ended_reason = COALESCE(ended_reason, $2)
          WHERE id = $1`,
-        [callId, CallStatus === 'completed' ? 'completed' : CallStatus]
+        [callId, derivedReason]
       );
       emitCallStatus(callId, 'ENDED');
       activeOrchestrators.delete(callId);
