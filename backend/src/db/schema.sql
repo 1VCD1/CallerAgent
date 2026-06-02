@@ -134,7 +134,8 @@ CREATE TABLE IF NOT EXISTS test_runs (
   total_scenarios INTEGER NOT NULL DEFAULT 0,
   passed INTEGER NOT NULL DEFAULT 0,
   failed INTEGER NOT NULL DEFAULT 0,
-  accuracy FLOAT,                   -- passed / total
+  accuracy FLOAT,                   -- passed / total (all scenarios)
+  accuracy_controllable FLOAT,      -- passed / total excluding force-majeure scenarios
   human_detection_rate FLOAT,       -- % of has_human scenarios where human was escalated
   false_positive_rate FLOAT,        -- % of no-human scenarios that incorrectly escalated
   avg_turns FLOAT,
@@ -143,6 +144,7 @@ CREATE TABLE IF NOT EXISTS test_runs (
 );
 ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS commit_sha TEXT;
 ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS commit_message TEXT;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS accuracy_controllable FLOAT;
 
 CREATE TABLE IF NOT EXISTS test_results (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

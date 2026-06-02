@@ -175,21 +175,26 @@
   </div>
 
   <!-- Metric explanation cards -->
-  <div class="grid grid-cols-3 gap-3 mb-5">
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+    <div class="bg-slate-800 rounded-lg p-4 border border-blue-800">
+      <div class="text-blue-400 text-xs font-semibold mb-1">AI Accuracy</div>
+      <div id="metric-accuracy-ctrl" class="text-3xl font-bold text-slate-400">—</div>
+      <div class="text-slate-500 text-xs mt-2 leading-relaxed">Scenarios where AI made the right call — <em>excluding</em> force majeure (closed, voicemail, wrong number). This is what AI logic changes actually affect.</div>
+    </div>
     <div class="bg-slate-800 rounded-lg p-4">
       <div class="text-slate-400 text-xs font-semibold mb-1">Overall Accuracy</div>
       <div id="metric-accuracy" class="text-3xl font-bold text-slate-400">—</div>
-      <div class="text-slate-500 text-xs mt-2 leading-relaxed">Scenarios where AI produced exactly the right outcome (human reached, outside hours, voicemail, etc.)</div>
+      <div class="text-slate-500 text-xs mt-2 leading-relaxed">All scenarios including force majeure. Lower than AI Accuracy is expected and normal.</div>
     </div>
     <div class="bg-slate-800 rounded-lg p-4">
-      <div class="text-slate-400 text-xs font-semibold mb-1">Human Detection Rate</div>
+      <div class="text-slate-400 text-xs font-semibold mb-1">Human Detection</div>
       <div id="metric-human" class="text-3xl font-bold text-slate-400">—</div>
-      <div class="text-slate-500 text-xs mt-2 leading-relaxed">Of scenarios with a real human at the end, how many did AI successfully detect and escalate to you?</div>
+      <div class="text-slate-500 text-xs mt-2 leading-relaxed">Of scenarios with a real human, how many did AI detect and escalate? Critical metric.</div>
     </div>
     <div class="bg-slate-800 rounded-lg p-4">
       <div class="text-slate-400 text-xs font-semibold mb-1">False Positive Rate</div>
       <div id="metric-fp" class="text-3xl font-bold text-slate-400">—</div>
-      <div class="text-slate-500 text-xs mt-2 leading-relaxed">Of scenarios with NO human, how often did AI wrongly escalate thinking there was one? Lower is better.</div>
+      <div class="text-slate-500 text-xs mt-2 leading-relaxed">No human but AI escalated anyway. Should be 0%. Lower is better.</div>
     </div>
   </div>
 
@@ -1413,12 +1418,14 @@ function renderTestResults(data) {
   const fpColor = v => v == null ? 'text-slate-400'
     : v <= 0 ? 'text-emerald-400' : v <= 0.1 ? 'text-amber-400' : 'text-red-400';
 
-  document.getElementById('metric-accuracy').className = `text-3xl font-bold ${color(r.accuracy, 0.8, 0.5)}`;
-  document.getElementById('metric-accuracy').textContent = pct(r.accuracy);
-  document.getElementById('metric-human').className = `text-3xl font-bold ${color(r.human_detection_rate, 0.9, 0.7)}`;
-  document.getElementById('metric-human').textContent = pct(r.human_detection_rate);
-  document.getElementById('metric-fp').className = `text-3xl font-bold ${fpColor(r.false_positive_rate)}`;
-  document.getElementById('metric-fp').textContent = pct(r.false_positive_rate);
+  const setMetric = (id, val, colorFn) => {
+    document.getElementById(id).className = `text-3xl font-bold ${colorFn(val)}`;
+    document.getElementById(id).textContent = pct(val);
+  };
+  setMetric('metric-accuracy-ctrl', r.accuracy_controllable, v => color(v, 0.8, 0.5));
+  setMetric('metric-accuracy',      r.accuracy,              v => color(v, 0.8, 0.5));
+  setMetric('metric-human',         r.human_detection_rate,  v => color(v, 0.9, 0.7));
+  setMetric('metric-fp',            r.false_positive_rate,   fpColor);
 
   const ago = relTime(r.started_at);
   document.getElementById('test-run-meta').textContent =
@@ -1505,10 +1512,16 @@ function renderRunHistory(runs) {
       labels,
       datasets: [
         {
+          label: 'AI Accuracy (excl. force majeure)',
+          data: ordered.map(r => pctVal(r.accuracy_controllable)),
+          borderColor: '#3b82f6', backgroundColor: '#3b82f620',
+          pointRadius: 5, tension: 0.2, fill: false, borderWidth: 2,
+        },
+        {
           label: 'Overall Accuracy',
           data: ordered.map(r => pctVal(r.accuracy)),
-          borderColor: '#3b82f6', backgroundColor: '#3b82f620',
-          pointRadius: 5, tension: 0.2, fill: false,
+          borderColor: '#64748b', backgroundColor: '#64748b20',
+          pointRadius: 4, tension: 0.2, fill: false, borderDash: [4,3],
         },
         {
           label: 'Human Detection',

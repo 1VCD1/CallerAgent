@@ -4,6 +4,13 @@ import { query, queryOne } from '../db/client';
 import { decideLLMAction } from './llm-engine';
 import { config } from '../config';
 import { CallContext, LLMAction } from '../types';
+import {
+  isOutsideBusinessHours,
+  isWrongNumber,
+  isVoicemailGreeting,
+  isInvalidOrDisconnected,
+  isCallbackOffer,
+} from './human-detector';
 
 const openai = new OpenAI({ apiKey: config.openai.apiKey });
 
@@ -105,6 +112,31 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
     while (turnNum < scenario.maxTurns) {
       turnNum++;
       const currentIvrUtterance = transcript.filter(t => t.role === 'IVR').slice(-1)[0]?.text ?? '';
+
+      // Apply the same short-circuit detectors as the real webhook handler
+      // These run BEFORE the LLM in production, so they must run here too
+      if (currentIvrUtterance) {
+        if (isOutsideBusinessHours(currentIvrUtterance)) {
+          actualOutcome = 'outside_hours';
+          transcript.push({ turn: turnNum, role: 'AI', text: '[end_call: outside_hours]' });
+          break;
+        }
+        if (isWrongNumber(currentIvrUtterance)) {
+          actualOutcome = 'wrong_number';
+          transcript.push({ turn: turnNum, role: 'AI', text: '[end_call: wrong_number]' });
+          break;
+        }
+        if (isVoicemailGreeting(currentIvrUtterance)) {
+          actualOutcome = 'voicemail';
+          transcript.push({ turn: turnNum, role: 'AI', text: '[end_call: voicemail]' });
+          break;
+        }
+        if (isInvalidOrDisconnected(currentIvrUtterance)) {
+          actualOutcome = 'invalid_number';
+          transcript.push({ turn: turnNum, role: 'AI', text: '[end_call: invalid_number]' });
+          break;
+        }
+      }
 
       // Build a minimal CallContext for the real decision engine
       const callId = uuidv4();
@@ -248,26 +280,36 @@ export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
     );
   }
 
+  // Force-majeure outcomes: circumstances beyond AI control (same set as EXCLUDED_FROM_AI_PERF in dashboard)
+  const FORCE_MAJEURE = new Set(['outside_hours', 'voicemail', 'voicemail_left', 'wrong_number',
+    'invalid_number', 'busy', 'no-answer', 'dial_failed', 'server_restart']);
+
   const passed = results.filter(r => r.passed).length;
+  const controllableResults = results.filter(r => {
+    const scenario = scenarios.find(s => s.id === r.scenarioId);
+    return !FORCE_MAJEURE.has(scenario?.expected_outcome ?? '');
+  });
+  const controllablePassed = controllableResults.filter(r => r.passed).length;
+  const accuracyControllable = controllableResults.length
+    ? controllablePassed / controllableResults.length : null;
+
   const humanScenarios = results.filter(r => scenarios.find(s => s.id === r.scenarioId)?.has_human);
   const humanDetectionRate = humanScenarios.length
-    ? humanScenarios.filter(r => r.humanDetected).length / humanScenarios.length
-    : null;
+    ? humanScenarios.filter(r => r.humanDetected).length / humanScenarios.length : null;
   const noHumanScenarios = results.filter(r => !scenarios.find(s => s.id === r.scenarioId)?.has_human);
   const falsePositiveRate = noHumanScenarios.length
-    ? noHumanScenarios.filter(r => r.falsePositive).length / noHumanScenarios.length
-    : null;
+    ? noHumanScenarios.filter(r => r.falsePositive).length / noHumanScenarios.length : null;
   const avgTurns = results.reduce((s, r) => s + r.turns, 0) / results.length;
 
   await query(
     `UPDATE test_runs SET
-       passed=$1, failed=$2, accuracy=$3,
-       human_detection_rate=$4, false_positive_rate=$5, avg_turns=$6, ended_at=NOW()
-     WHERE id=$7`,
-    [passed, results.length - passed, passed / results.length,
+       passed=$1, failed=$2, accuracy=$3, accuracy_controllable=$4,
+       human_detection_rate=$5, false_positive_rate=$6, avg_turns=$7, ended_at=NOW()
+     WHERE id=$8`,
+    [passed, results.length - passed, passed / results.length, accuracyControllable,
      humanDetectionRate, falsePositiveRate, avgTurns, runId]
   );
 
-  console.log(`[TestRunner] Done: ${passed}/${results.length} passed (${Math.round(passed / results.length * 100)}% accuracy)`);
+  console.log(`[TestRunner] Done: ${passed}/${results.length} (${Math.round(passed/results.length*100)}% overall, ${Math.round((accuracyControllable??0)*100)}% AI-controllable)`);
   return runId;
 }
