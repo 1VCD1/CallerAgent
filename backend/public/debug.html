@@ -232,6 +232,12 @@
     <div id="gen-status" class="text-slate-500 text-xs mt-2"></div>
   </div>
 
+  <!-- Manage scenarios -->
+  <div class="bg-slate-800 rounded-lg p-4 mb-4">
+    <div class="text-slate-400 text-xs font-semibold mb-3">Manage Scenarios</div>
+    <div id="scenarios-list" class="space-y-1.5"></div>
+  </div>
+
   <!-- Run history table -->
   <div class="bg-slate-800 rounded-lg p-4">
     <div class="text-slate-400 text-xs font-semibold mb-3">Deploy History</div>
@@ -1370,10 +1376,40 @@ let _testingLoaded = false;
 async function loadTesting() {
   if (_testingLoaded) return;
   _testingLoaded = true;
-  const data = await api('/debug/test/latest').catch(() => null);
-  const runs  = await api('/debug/test/runs').catch(() => []);
+  const [data, runs] = await Promise.all([
+    api('/debug/test/latest').catch(() => null),
+    api('/debug/test/runs').catch(() => []),
+  ]);
   renderTestResults(data);
   renderRunHistory(runs);
+  renderScenariosList();
+}
+
+async function deleteScenario(id) {
+  if (!confirm('Delete this scenario?')) return;
+  await fetch(`/debug/test/scenarios/${id}`, { method: 'DELETE' });
+  await renderScenariosList();
+}
+
+async function renderScenariosList() {
+  const scenarios = await api('/debug/test/scenarios').catch(() => []);
+  const el = document.getElementById('scenarios-list');
+  if (!el) return;
+  if (!scenarios.length) {
+    el.innerHTML = '<div class="text-slate-600 text-xs">No scenarios yet.</div>';
+    return;
+  }
+  el.innerHTML = scenarios.map(s => {
+    const tag = s.has_human
+      ? '<span class="text-blue-400 text-xs">has human</span>'
+      : '<span class="text-slate-500 text-xs">no human</span>';
+    return `<div class="flex items-center gap-2 text-xs border border-slate-700 rounded px-3 py-2">
+      <span class="text-slate-200 flex-1 truncate" title="${s.name}">${s.name}</span>
+      ${tag}
+      <span class="text-slate-500">${s.expected_outcome}</span>
+      <button onclick="deleteScenario('${s.id}')" class="text-slate-600 hover:text-red-400 transition-colors ml-2">✕</button>
+    </div>`;
+  }).join('');
 }
 
 async function triggerTestRun() {
@@ -1451,6 +1487,7 @@ function renderTestResults(data) {
         <span class="badge ${tagColor} text-xs">${tag}</span>
         ${humanBadge}${fpBadge}
         <span class="ml-auto text-slate-500 text-xs">${s.turns} turns</span>
+        <button onclick="deleteScenario('${s.scenario_id}')" class="text-slate-600 hover:text-red-400 text-xs px-2 py-0.5 border border-slate-700 hover:border-red-800 rounded transition-colors">✕ delete</button>
       </div>
       <div class="text-slate-500 text-xs mt-1">
         Expected: <span class="text-slate-300">${s.expected_outcome}</span>
