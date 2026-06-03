@@ -123,6 +123,12 @@ const zhTW = {
   feedback_no: '不，AI 判斷錯了',
   feedback_confirmed: '已確認是真人 ✓',
   feedback_rejected: '已標記為 AI 誤判',
+  fn_title: '有真人接聽嗎？',
+  fn_hint: '如果真人接了電話但 AI 沒有偵測到，請告訴我們，幫助我們改進。',
+  fn_yes: '有，真人接了',
+  fn_no: '沒有，全程都是 IVR',
+  fn_confirmed: '已回報，謝謝你的反饋',
+  fn_rejected: '收到，這通沒有真人',
 
   // Errors
   error: '錯誤',

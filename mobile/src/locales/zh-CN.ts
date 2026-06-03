@@ -123,6 +123,12 @@ const zhCN = {
   feedback_no: '不，AI 判断错了',
   feedback_confirmed: '已确认是真人 ✓',
   feedback_rejected: '已标记为 AI 误判',
+  fn_title: '有真人接听吗？',
+  fn_hint: '如果真人接了电话但 AI 没有检测到，请告诉我们，帮助我们改进。',
+  fn_yes: '有，真人接了',
+  fn_no: '没有，全程都是 IVR',
+  fn_confirmed: '已回报，感谢你的反馈',
+  fn_rejected: '收到，这通没有真人',
 
   // Errors
   error: '错误',

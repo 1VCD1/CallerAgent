@@ -123,6 +123,12 @@ const en = {
   feedback_no: 'No, AI mistake',
   feedback_confirmed: 'Confirmed human ✓',
   feedback_rejected: 'Marked as AI mistake',
+  fn_title: 'DID A HUMAN ANSWER?',
+  fn_hint: "If a real person picked up but the AI didn't notice, let us know so we can improve.",
+  fn_yes: 'Yes, human was there',
+  fn_no: 'No, no human',
+  fn_confirmed: 'Reported — thanks for the feedback',
+  fn_rejected: 'Got it — no human on this call',
 
   // Errors
   error: 'Error',

@@ -318,6 +318,45 @@ export default function CallDetailScreen() {
           </View>
         )}
 
+        {/* False negative card — shown when AI did NOT detect human, user can report one was there */}
+        {isTerminal && !call.human_reached && (
+          <View style={s.feedbackCard}>
+            <Text style={s.feedbackTitle}>{t('fn_title')}</Text>
+            <Text style={s.feedbackHint}>{t('fn_hint')}</Text>
+            {userConfirmed === null || userConfirmed === undefined ? (
+              <View style={s.feedbackBtns}>
+                <TouchableOpacity
+                  style={[s.feedbackBtn, s.feedbackBtnYes]}
+                  onPress={() => submitFeedback(true)}
+                  disabled={feedbackSaving}
+                >
+                  <Ionicons name="person-outline" size={16} color={colors.green} />
+                  <Text style={[s.feedbackBtnTxt, { color: colors.green }]}>{t('fn_yes')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[s.feedbackBtn, s.feedbackBtnNo]}
+                  onPress={() => submitFeedback(false)}
+                  disabled={feedbackSaving}
+                >
+                  <Ionicons name="close-circle-outline" size={16} color={colors.muted} />
+                  <Text style={[s.feedbackBtnTxt, { color: colors.muted }]}>{t('fn_no')}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={[s.feedbackResult, { borderColor: userConfirmed ? colors.green : colors.border }]}>
+                <Ionicons
+                  name={userConfirmed ? 'person' : 'checkmark-circle'}
+                  size={16}
+                  color={userConfirmed ? colors.green : colors.muted}
+                />
+                <Text style={[s.feedbackResultTxt, { color: userConfirmed ? colors.green : colors.muted }]}>
+                  {userConfirmed ? t('fn_confirmed') : t('fn_rejected')}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Tip for next call — only shown on completed calls */}
         {isTerminal && (
           <View style={s.noteCard}>
