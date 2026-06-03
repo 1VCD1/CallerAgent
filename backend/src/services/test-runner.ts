@@ -32,6 +32,7 @@ export interface TestScenario {
   maxTurns: number;
   tags: string[];
   userInfo?: { name?: string; phoneNumber?: string; birthday?: string };
+  referenceCallIds?: string[];
 }
 
 interface TurnRecord {
@@ -47,9 +48,44 @@ interface ScenarioResult {
   expectedOutcome: string;
   turns: number;
   humanDetected: boolean;
+  humanAppearedInIvr: boolean; // IVR simulator produced a [HUMAN] turn
   falsePositive: boolean;
   transcript: TurnRecord[];
   error?: string;
+}
+
+// Fetch transcripts for reference calls and format as few-shot examples
+async function buildFewShotExamples(callIds: string[]): Promise<string> {
+  if (!callIds.length) return '';
+  const examples: string[] = [];
+  for (const callId of callIds.slice(0, 4)) { // max 4 examples to keep context manageable
+    const transcripts = await query<{ speaker: string; text: string }>(
+      `SELECT speaker, text FROM transcripts WHERE call_id = $1 ORDER BY timestamp`,
+      [callId]
+    );
+    const callRow = await queryOne<{ ended_reason: string | null; human_reached: boolean }>(
+      `SELECT ended_reason, human_reached FROM calls WHERE id = $1`,
+      [callId]
+    );
+    if (!transcripts.length) continue;
+    const outcome = callRow?.human_reached ? 'human_reached' : (callRow?.ended_reason ?? 'unknown');
+    const lines = transcripts.map(t =>
+      `${t.speaker === 'AI' ? 'Caller' : t.speaker}: ${t.text}`
+    ).join('\n');
+    examples.push(`=== Example call (outcome: ${outcome}) ===\n${lines}`);
+  }
+  return examples.join('\n\n');
+}
+
+function buildPersona(company: string, goal: string, ivrPersona: string, hasHuman: boolean): string {
+  if (ivrPersona.length > 80) return ivrPersona;
+  const goalDesc = goal === 'reach_human' || goal === 'billing'
+    ? 'connect the caller to a live agent'
+    : goal;
+  const transferLine = hasHuman
+    ? `This IVR DOES have a live human agent path. Transfer to a human agent once you understand the caller's issue.`
+    : `This IVR does NOT transfer to a human agent. All issues are handled through automated self-service only.`;
+  return `You are ${company}'s automated phone IVR system. Your goal is to verify the caller's identity, understand their reason for calling (${goalDesc}), and route them appropriately. ${transferLine}`;
 }
 
 // IVR simulator: given conversation history and AI's last action, produce next IVR utterance
@@ -57,6 +93,7 @@ async function simulateIvr(
   persona: string,
   history: TurnRecord[],
   lastAction: LLMAction | null,
+  fewShotExamples?: string,
 ): Promise<string | null> {
   const actionDesc = lastAction
     ? lastAction.action === 'press_key'  ? `[DTMF: pressed key ${lastAction.value}]`
@@ -67,27 +104,21 @@ async function simulateIvr(
 
   const historyText = history.map(t => `${t.role}: ${t.text}`).join('\n');
 
+  const systemContent = [
+    `You are simulating the following phone system or agent with HIGH REALISM:\n${persona}`,
+    fewShotExamples
+      ? `Here are real call transcripts showing exactly how this system behaves — match this style and flow:\n\n${fewShotExamples}`
+      : '',
+    `Output ONLY the spoken words — no labels, no stage directions. Return the single word NULL (no quotes) when the call is completely over.
+DTMF rule: When the caller's action is [DTMF: pressed key ...], you ALWAYS receive those digits — never say "I didn't catch that" for DTMF. Respond to what was pressed (e.g. wrong number of digits, unrecognized account, routing to correct department).
+HUMAN AGENT rule: The moment you transition from automated IVR to a live human agent speaking, prefix your response with [HUMAN] (e.g. "[HUMAN] Thank you for holding, this is Sarah..."). Keep [HUMAN] on every subsequent turn as long as a human agent is speaking.`,
+  ].filter(Boolean).join('\n\n');
+
   const messages: OpenAI.ChatCompletionMessageParam[] = [
-    {
-      role: 'system',
-      content: `You are simulating an IVR phone system or human agent with HIGH REALISM.
-
-${persona}
-
-Core rules:
-- Output ONLY the spoken response — no labels, no stage directions
-- Real IVRs take many turns. DO NOT rush through steps. One prompt at a time.
-- If the caller gives an unexpected response (wrong key, unclear phrase, silence), say "I'm sorry, I didn't catch that" or repeat the question — don't skip ahead
-- IVR menus are long and detailed. Give the FULL menu options, not a summary.
-- Hold music / "please wait" counts as a turn. Use it when transferring.
-- For humans: use natural speech — "um", "uh", "let me check on that", contractions, incomplete sentences
-- If you are a human agent, introduce yourself by name and ask how you can help
-- ONLY return NULL when the call is completely over (caller hung up, voicemail beep passed, goodbye said)
-- Do NOT return NULL just because you gave the caller information — wait for their response`,
-    },
+    { role: 'system', content: systemContent },
     {
       role: 'user',
-      content: `Conversation so far:\n${historyText || '(call just started — give the opening IVR greeting)'}${actionDesc ? `\n\nCaller's latest action: ${actionDesc}` : ''}\n\nWhat does the IVR/agent say next? Be realistic — don't skip steps.`,
+      content: `Conversation so far:\n${historyText || '(call just started — give the opening IVR greeting)'}${actionDesc ? `\n\nCaller's latest action: ${actionDesc}` : ''}\n\nWhat does the IVR/agent say next?`,
     },
   ];
 
@@ -109,6 +140,7 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
   let actualOutcome = 'max_attempts';
   let humanDetected = false;
   let falsePositive = false;
+  let humanAppearedInIvr = false; // IVR simulator signalled [HUMAN]
   let lastAction: LLMAction | null = null;
   let recentHumanConfidences: number[] = [];
 
@@ -122,8 +154,11 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
   const recentFailures: string[] = [];
 
   try {
+    const fewShotExamples = await buildFewShotExamples(scenario.referenceCallIds ?? []);
+    const persona = buildPersona(scenario.company, scenario.goal, scenario.ivrPersona, scenario.hasHuman);
+
     // Initial IVR greeting
-    const greeting = await simulateIvr(scenario.ivrPersona, [], null);
+    const greeting = await simulateIvr(persona, [], null, fewShotExamples);
     if (greeting) {
       transcript.push({ turn: 0, role: 'IVR', text: greeting });
     }
@@ -247,11 +282,14 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
       }
 
       // Get next IVR response
-      const ivrResponse = await simulateIvr(scenario.ivrPersona, transcript, action);
-      if (!ivrResponse) {
+      const rawIvrResponse = await simulateIvr(persona, transcript, action, fewShotExamples);
+      if (!rawIvrResponse) {
         actualOutcome = 'call_ended_by_ivr';
         break;
       }
+      const ivrIsHuman = rawIvrResponse.startsWith('[HUMAN]');
+      if (ivrIsHuman) humanAppearedInIvr = true;
+      const ivrResponse = rawIvrResponse.replace(/^\[HUMAN\]\s*/, '');
       transcript.push({ turn: turnNum, role: 'IVR', text: ivrResponse });
     }
   } catch (err: any) {
@@ -262,6 +300,7 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
       expectedOutcome: scenario.expectedOutcome,
       turns: turnNum,
       humanDetected,
+      humanAppearedInIvr,
       falsePositive,
       transcript,
       error: err.message ?? String(err),
@@ -278,6 +317,7 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
     expectedOutcome: scenario.expectedOutcome,
     turns: turnNum,
     humanDetected,
+    humanAppearedInIvr,
     falsePositive,
     transcript,
   };
@@ -296,6 +336,7 @@ export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
     ivr_persona: string; expected_outcome: string;
     has_human: boolean; max_turns: number; tags: string[];
     user_info: { name?: string; phoneNumber?: string; birthday?: string } | null;
+    reference_call_ids: string[] | null;
   }>(`SELECT * FROM test_scenarios ORDER BY created_at`);
 
   if (scenarios.length === 0) return 'no_scenarios';
@@ -324,6 +365,7 @@ export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
       maxTurns: row.max_turns,
       tags: row.tags ?? [],
       userInfo: row.user_info ?? undefined,
+      referenceCallIds: row.reference_call_ids ?? [],
     };
 
     console.log(`[TestRunner] Running: ${scenario.name}`);
@@ -342,25 +384,23 @@ export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
     );
   }
 
-  // Force-majeure outcomes: circumstances beyond AI control (same set as EXCLUDED_FROM_AI_PERF in dashboard)
-  const FORCE_MAJEURE = new Set(['outside_hours', 'voicemail', 'voicemail_left', 'wrong_number',
-    'invalid_number', 'busy', 'no-answer', 'dial_failed', 'server_restart']);
-
-  const passed = results.filter(r => r.passed).length;
-  const controllableResults = results.filter(r => {
-    const scenario = scenarios.find(s => s.id === r.scenarioId);
-    return !FORCE_MAJEURE.has(scenario?.expected_outcome ?? '');
-  });
-  const controllablePassed = controllableResults.filter(r => r.passed).length;
-  const accuracyControllable = controllableResults.length
-    ? controllablePassed / controllableResults.length : null;
-
   const humanScenarios = results.filter(r => scenarios.find(s => s.id === r.scenarioId)?.has_human);
-  const humanDetectionRate = humanScenarios.length
-    ? humanScenarios.filter(r => r.humanDetected).length / humanScenarios.length : null;
   const noHumanScenarios = results.filter(r => !scenarios.find(s => s.id === r.scenarioId)?.has_human);
+
+  // Success rate: % of has_human scenarios where AI successfully reached a human (navigation metric)
+  const successRate = humanScenarios.length
+    ? humanScenarios.filter(r => r.humanDetected).length / humanScenarios.length : null;
+
+  // Human detection rate: when IVR simulator produced a human turn, did AI detect it? (detection metric)
+  const humanAppearedResults = results.filter(r => r.humanAppearedInIvr);
+  const humanDetectionRate = humanAppearedResults.length
+    ? humanAppearedResults.filter(r => r.humanDetected).length / humanAppearedResults.length : null;
+
+  // False positive: AI escalated when there was no human in the scenario
   const falsePositiveRate = noHumanScenarios.length
     ? noHumanScenarios.filter(r => r.falsePositive).length / noHumanScenarios.length : null;
+
+  const passed = results.filter(r => r.passed).length;
   const avgTurns = results.reduce((s, r) => s + r.turns, 0) / results.length;
 
   await query(
@@ -368,10 +408,10 @@ export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
        passed=$1, failed=$2, accuracy=$3, accuracy_controllable=$4,
        human_detection_rate=$5, false_positive_rate=$6, avg_turns=$7, ended_at=NOW()
      WHERE id=$8`,
-    [passed, results.length - passed, passed / results.length, accuracyControllable,
+    [passed, results.length - passed, successRate, successRate,
      humanDetectionRate, falsePositiveRate, avgTurns, runId]
   );
 
-  console.log(`[TestRunner] Done: ${passed}/${results.length} (${Math.round(passed/results.length*100)}% overall, ${Math.round((accuracyControllable??0)*100)}% AI-controllable)`);
+  console.log(`[TestRunner] Done: ${passed}/${results.length} — success rate: ${Math.round((successRate??0)*100)}%, false positive: ${Math.round((falsePositiveRate??0)*100)}%`);
   return runId;
 }

@@ -329,11 +329,27 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.post('/debug/test/scenarios', async (request) => {
     const b = request.body as any;
     return queryOne<any>(
-      `INSERT INTO test_scenarios (name, company, goal, ivr_persona, expected_outcome, has_human, max_turns, tags)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [b.name, b.company, b.goal ?? 'reach_human', b.ivr_persona,
-       b.expected_outcome, b.has_human ?? false, b.max_turns ?? 20, b.tags ?? []]
+      `INSERT INTO test_scenarios (name, company, goal, ivr_persona, expected_outcome, has_human, max_turns, tags, user_info, reference_call_ids)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [b.name, b.company, b.goal ?? 'reach_human', b.ivr_persona ?? '',
+       b.expected_outcome, b.has_human ?? false, b.max_turns ?? 20, b.tags ?? [],
+       b.user_info ?? null, b.reference_call_ids ?? []]
     );
+  });
+
+  // Update a scenario
+  fastify.patch('/debug/test/scenarios/:id', async (request) => {
+    const { id } = request.params as { id: string };
+    const b = request.body as any;
+    const fields: string[] = [];
+    const values: any[] = [];
+    let i = 1;
+    for (const key of ['name','company','goal','ivr_persona','expected_outcome','has_human','max_turns','tags','user_info','reference_call_ids']) {
+      if (key in b) { fields.push(`${key} = $${i++}`); values.push(b[key]); }
+    }
+    if (!fields.length) return { ok: true };
+    values.push(id);
+    return queryOne<any>(`UPDATE test_scenarios SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`, values);
   });
 
   // Delete a scenario
@@ -355,27 +371,28 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
 
     const resp = await openai.chat.completions.create({
       model: 'gpt-4o',
-      max_tokens: 600,
+      max_tokens: 100,
       messages: [{
         role: 'system',
-        content: `You are helping build an IVR test scenario database. Given a real phone call transcript, write a concise IVR persona description that can be used to simulate this call in a test. The persona should describe the IVR flow step by step so a simulator LLM can replay it interactively. Keep it under 400 words. Output JSON only: {"name": "...", "ivr_persona": "..."}`
+        content: `Given a real phone call transcript, generate a short descriptive name for this test scenario. Output JSON only: {"name": "..."}`
       }, {
         role: 'user',
-        content: `Company: ${company}\nGoal: ${goal}\nActual outcome: ${outcome}\nHas human at end: ${hasHuman}\n\nTranscript:\n${transcript.slice(0, 3000)}`
+        content: `Company: ${company}\nGoal: ${goal}\nActual outcome: ${outcome}\nHas human at end: ${hasHuman}\n\nTranscript:\n${transcript.slice(0, 1000)}`
       }],
       response_format: { type: 'json_object' },
     });
 
     const generated = JSON.parse(resp.choices[0]?.message?.content ?? '{}');
     return queryOne<any>(
-      `INSERT INTO test_scenarios (name, company, goal, ivr_persona, expected_outcome, has_human, max_turns, tags)
-       VALUES ($1, $2, $3, $4, $5, $6, 20, $7) RETURNING *`,
+      `INSERT INTO test_scenarios (name, company, goal, ivr_persona, expected_outcome, has_human, max_turns, tags, reference_call_ids)
+       VALUES ($1, $2, $3, $4, $5, $6, 20, $7, $8) RETURNING *`,
       [
         generated.name ?? `${company} — ${outcome}`,
         company, goal ?? 'reach_human',
-        generated.ivr_persona ?? '',
+        '',
         outcome, hasHuman,
         [`auto-generated`, `call:${callId.slice(0,8)}`],
+        callId ? [callId] : [],
       ]
     );
   });

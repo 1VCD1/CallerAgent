@@ -51,11 +51,14 @@ function buildContextMessage(ctx: CallContext): string {
     .map(formatMemory)
     .join('\n');
 
-  const userInfoBlock = ctx.userInfo && (ctx.userInfo.name || ctx.userInfo.birthday || ctx.userInfo.phoneNumber)
+  const rawPhone = ctx.userInfo?.phoneNumber ?? '';
+  const tenDigitPhone = rawPhone.replace(/^\+1/, '').replace(/\D/g, ''); // e.g. +18582229375 → 8582229375
+
+  const userInfoBlock = ctx.userInfo && (ctx.userInfo.name || ctx.userInfo.birthday || rawPhone)
     ? `\n⚡ USER INFO — USE THIS PROACTIVELY to answer IVR questions. Do NOT wait to be asked twice.
 ${ctx.userInfo.name ? `  Name: ${ctx.userInfo.name}` : ''}
 ${ctx.userInfo.birthday ? `  Date of birth: ${ctx.userInfo.birthday}` : ''}
-${ctx.userInfo.phoneNumber ? `  Phone number: ${ctx.userInfo.phoneNumber} ← say this digit-by-digit if IVR asks for "the number you are calling about", "your phone number", "10-digit number", or a callback number` : ''}`.trim()
+${rawPhone ? `  Phone number (10-digit for DTMF): ${tenDigitPhone} — use press_key with this exact value when IVR asks you to enter/press your number. Use say_phrase "${tenDigitPhone.split('').join(' ')}" only if IVR explicitly asks you to say it.` : ''}`.trim()
     : '';
 
   const confidenceHistory = ctx.recentHumanConfidences && ctx.recentHumanConfidences.length > 0

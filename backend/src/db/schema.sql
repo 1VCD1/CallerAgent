@@ -118,15 +118,18 @@ CREATE TABLE IF NOT EXISTS test_scenarios (
   name TEXT NOT NULL,
   company TEXT NOT NULL,
   goal TEXT NOT NULL DEFAULT 'reach_human',
-  ivr_persona TEXT NOT NULL,        -- system prompt describing how this IVR behaves
+  ivr_persona TEXT NOT NULL DEFAULT '',  -- optional: auto-generated from company+goal if short/empty
   expected_outcome TEXT NOT NULL,   -- 'human_reached' | 'outside_hours' | 'no_human_path' | etc.
   has_human BOOLEAN NOT NULL DEFAULT false,  -- does this scenario end with a real human?
   max_turns INTEGER NOT NULL DEFAULT 20,
   tags TEXT[] DEFAULT '{}',
-  user_info JSONB DEFAULT NULL,     -- {name, phoneNumber, birthday} — overrides default test user
+  user_info JSONB DEFAULT NULL,           -- {name, phoneNumber, birthday} — overrides default test user
+  reference_call_ids TEXT[] DEFAULT '{}', -- real call IDs whose transcripts are used as few-shot examples
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ALTER TABLE test_scenarios ADD COLUMN IF NOT EXISTS user_info JSONB DEFAULT NULL;
+ALTER TABLE test_scenarios ADD COLUMN IF NOT EXISTS reference_call_ids TEXT[] DEFAULT '{}';
+ALTER TABLE test_scenarios ALTER COLUMN ivr_persona SET DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS test_runs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -138,7 +141,7 @@ CREATE TABLE IF NOT EXISTS test_runs (
   failed INTEGER NOT NULL DEFAULT 0,
   accuracy FLOAT,                   -- passed / total (all scenarios)
   accuracy_controllable FLOAT,      -- passed / total excluding force-majeure scenarios
-  human_detection_rate FLOAT,       -- % of has_human scenarios where human was escalated
+  human_detection_rate FLOAT,       -- success rate: % of has_human scenarios where AI reached human
   false_positive_rate FLOAT,        -- % of no-human scenarios that incorrectly escalated
   avg_turns FLOAT,
   started_at TIMESTAMPTZ DEFAULT NOW(),
@@ -147,6 +150,7 @@ CREATE TABLE IF NOT EXISTS test_runs (
 ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS commit_sha TEXT;
 ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS commit_message TEXT;
 ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS accuracy_controllable FLOAT;
+ALTER TABLE test_runs ADD COLUMN IF NOT EXISTS false_negative_rate FLOAT;
 
 CREATE TABLE IF NOT EXISTS test_results (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

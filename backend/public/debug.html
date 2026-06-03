@@ -1445,9 +1445,9 @@ function renderTestResults(data) {
     const fpBadge = s.false_positive
       ? '<span class="badge bg-orange-900 text-orange-300 text-xs">false positive</span>' : '';
 
-    const transcript = (s.transcript || []).slice(0, 6).map(t =>
+    const transcript = (s.transcript || []).map(t =>
       `<div class="text-xs ${t.role === 'IVR' ? 'text-slate-400' : 'text-blue-400'} leading-tight">
-        <span class="font-semibold">${t.role}:</span> ${t.text?.slice(0, 80) ?? ''}${t.text?.length > 80 ? '…' : ''}
+        <span class="font-semibold">${t.role}:</span> ${t.text ?? ''}
       </div>`
     ).join('');
 
