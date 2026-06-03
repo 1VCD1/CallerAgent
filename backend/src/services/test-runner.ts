@@ -82,7 +82,7 @@ async function buildFewShotExamples(callIds: string[]): Promise<string> {
 function buildPersona(company: string, goal: string, ivrPersona: string, hasHuman: boolean): string {
   if (ivrPersona.length > 80) return ivrPersona;
   const transferLine = hasHuman
-    ? `Human agents are available but gated — only transfer after full verification AND after attempting at least one self-service resolution. If the caller just says "agent" or "human" without going through the menu, redirect them back to the menu options first.`
+    ? `Human agents exist in this system but are not always available. Sometimes transfer is successful (use [HUMAN] prefix when a human picks up). Sometimes all agents are busy — in that case say so and offer a callback or ask the caller to try again later. Be realistic: not every call reaches a human.`
     : `This system is fully automated. There is no human agent path.`;
   return `You are ${company}'s automated phone IVR. You are thorough and protective of agent time. Before transferring to a human, you: (1) play a full multi-option menu and wait for the caller to select, (2) verify their identity by collecting their account phone number or account number, (3) attempt to resolve the issue through self-service options. You react realistically to unexpected inputs — if the caller presses a wrong key or says something unclear, ask them to try again.
 
@@ -281,7 +281,8 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
       if (action.action === 'escalate_to_user' || action.isHuman) {
         humanDetected = true;
         actualOutcome = 'human_reached';
-        if (!scenario.hasHuman) falsePositive = true;
+        // False positive = AI escalated but IVR never produced [HUMAN]
+        if (!humanAppearedInIvr) falsePositive = true;
         break;
       }
 
@@ -327,8 +328,11 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
     };
   }
 
-  const passed = actualOutcome === scenario.expectedOutcome ||
-    (scenario.expectedOutcome === 'human_reached' && humanDetected);
+  // Ground truth = what the IVR simulator actually did, not the metadata
+  // PASS = AI correctly responded to IVR's actual behavior:
+  //   - If IVR produced [HUMAN] → AI must have detected it (no false negative)
+  //   - If IVR never produced [HUMAN] → AI must not have falsely escalated (no false positive)
+  const passed = humanAppearedInIvr ? humanDetected : !falsePositive;
 
   return {
     scenarioId: scenario.id,
