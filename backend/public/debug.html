@@ -1597,7 +1597,7 @@ async function generateScenarioFromCall(callId) {
       body: JSON.stringify({
         callId, transcript, company: data.call.company, goal: data.call.goal,
         outcome: data.call.ended_reason ?? data.call.status,
-        hasHuman: !!data.call.human_reached,
+        hasHuman: data.call.user_confirmed !== null && data.call.user_confirmed !== undefined ? !!data.call.user_confirmed : !!data.call.human_reached,
       }),
     });
     if (!r.ok) throw new Error(await r.text());
@@ -1628,7 +1628,7 @@ async function generateScenario() {
     const transcript = (data.transcripts ?? [])
       .map(t => `${t.speaker}: ${t.text}`).join('\n');
     const outcome = data.call.ended_reason ?? data.call.status;
-    const hasHuman = !!data.call.human_reached;
+    const hasHuman = !!(data.call.human_reached || data.call.user_confirmed);
 
     const resp = await fetch('/debug/test/generate-scenario', {
       method: 'POST',
