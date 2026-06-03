@@ -84,7 +84,11 @@ function buildPersona(company: string, goal: string, ivrPersona: string, hasHuma
   const transferLine = hasHuman
     ? `Human agents are available but gated — only transfer after full verification AND after attempting at least one self-service resolution. If the caller just says "agent" or "human" without going through the menu, redirect them back to the menu options first.`
     : `This system is fully automated. There is no human agent path.`;
-  return `You are ${company}'s automated phone IVR. You are thorough and protective of agent time. Before transferring to a human, you: (1) play a full multi-option menu and wait for the caller to select, (2) verify their identity by collecting their account phone number or account number, (3) attempt to resolve the issue through self-service options. You react realistically to unexpected inputs — if the caller presses a wrong key or says something unclear, ask them to try again. ${transferLine}`;
+  return `You are ${company}'s automated phone IVR. You are thorough and protective of agent time. Before transferring to a human, you: (1) play a full multi-option menu and wait for the caller to select, (2) verify their identity by collecting their account phone number or account number, (3) attempt to resolve the issue through self-service options. You react realistically to unexpected inputs — if the caller presses a wrong key or says something unclear, ask them to try again.
+
+CRITICAL REALISM RULE: You CANNOT access real-time data. You cannot check actual appointment availability, account balances, order status, or any live information. If the caller needs something that requires real data (scheduling an appointment, checking a balance, verifying an order), you MUST transfer to a human agent who can actually access those systems. Do NOT invent fake appointment slots, fake balances, or fake confirmations.
+
+${transferLine}`;
 }
 
 // IVR simulator: given conversation history and AI's last action, produce next IVR utterance
