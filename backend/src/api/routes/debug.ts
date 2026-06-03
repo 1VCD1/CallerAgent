@@ -128,6 +128,42 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
     return { kpis, funnel, guardRails, outcomes, companies };
   });
 
+  // Weekly time series for overview charts
+  fastify.get('/debug/weekly', async () => {
+    const rows = await query<any>(`
+      SELECT
+        DATE_TRUNC('week', started_at)::date                                            AS week,
+        COUNT(*)                                                                         AS total,
+        COUNT(*) FILTER (WHERE human_reached
+          OR ended_reason IN ('callback_number_given','callback_offered'))               AS successful,
+        COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED','BRIDGED')
+          AND COALESCE(ended_reason,'') NOT IN
+            ('server_restart','dial_failed','busy','no-answer',
+             'outside_hours','voicemail','voicemail_left','invalid_number',
+             'callback_caller_id','user_cancelled'))                                     AS navigable,
+        ROUND(AVG(wait_duration_seconds) FILTER (WHERE human_reached))::int             AS avg_wait_secs,
+        COUNT(*) FILTER (WHERE human_reached = true AND user_confirmed = false)          AS fp_count,
+        COUNT(*) FILTER (WHERE human_reached = false AND user_confirmed = true)          AS fn_count,
+        COUNT(*) FILTER (WHERE human_reached = true AND user_confirmed = true)           AS tp_count
+      FROM calls
+      WHERE started_at > NOW() - INTERVAL '8 weeks'
+      GROUP BY week
+      ORDER BY week
+    `);
+    return rows.map(r => ({
+      week: r.week,
+      total: parseInt(r.total),
+      successful: parseInt(r.successful),
+      navigable: parseInt(r.navigable),
+      avgWaitSecs: r.avg_wait_secs ? parseInt(r.avg_wait_secs) : null,
+      successRate: parseInt(r.navigable) > 0 ? Math.round(parseInt(r.successful) / parseInt(r.navigable) * 100) : null,
+      fpRate: (parseInt(r.tp_count) + parseInt(r.fp_count)) > 0
+        ? Math.round(parseInt(r.fp_count) / (parseInt(r.tp_count) + parseInt(r.fp_count)) * 100) : null,
+      fnRate: (parseInt(r.tp_count) + parseInt(r.fn_count)) > 0
+        ? Math.round(parseInt(r.fn_count) / (parseInt(r.tp_count) + parseInt(r.fn_count)) * 100) : null,
+    }));
+  });
+
   // Detection quality: false positives and false negatives based on user feedback
   fastify.get('/debug/detection-quality', async () => {
     const [summary, falsePosRows, falseNegRows] = await Promise.all([
@@ -135,7 +171,7 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
         SELECT
           COUNT(*) FILTER (WHERE human_reached = true  AND user_confirmed = false)              AS false_positives,
           COUNT(*) FILTER (WHERE human_reached = false AND user_confirmed = true)               AS false_negatives,
-          COUNT(*) FILTER (WHERE human_reached = true  AND user_confirmed IS DISTINCT FROM false) AS true_positives,
+          COUNT(*) FILTER (WHERE human_reached = true  AND user_confirmed = true)                 AS true_positives,
           COUNT(*) FILTER (WHERE user_confirmed IS NOT NULL)                                    AS with_feedback,
           COUNT(*)                                                                               AS total
         FROM calls
