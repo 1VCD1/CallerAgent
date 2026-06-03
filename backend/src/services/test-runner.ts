@@ -317,9 +317,9 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
         actualOutcome = 'call_ended_by_ivr';
         break;
       }
-      const ivrIsHuman = rawIvrResponse.startsWith('[HUMAN]');
+      const ivrIsHuman = rawIvrResponse.includes('[HUMAN]');
       if (ivrIsHuman) humanAppearedInIvr = true;
-      const ivrResponse = rawIvrResponse.replace(/^\[HUMAN\]\s*/, '');
+      const ivrResponse = rawIvrResponse.replace(/\[HUMAN\]\s*/g, '');
       transcript.push({ turn: turnNum, role: 'IVR', text: ivrResponse });
     }
   } catch (err: any) {
@@ -337,11 +337,12 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
     };
   }
 
-  // Ground truth = what the IVR simulator actually did, not the metadata
-  // PASS = AI correctly responded to IVR's actual behavior:
-  //   - If IVR produced [HUMAN] → AI must have detected it (no false negative)
-  //   - If IVR never produced [HUMAN] → AI must not have falsely escalated (no false positive)
-  const passed = humanAppearedInIvr ? humanDetected : !falsePositive;
+  // Ground truth = what the IVR simulator actually did
+  // If IVR produced [HUMAN] → pass iff AI detected it
+  // If IVR never produced [HUMAN] → no false escalation AND actualOutcome matches expectedOutcome
+  const passed = humanAppearedInIvr
+    ? humanDetected
+    : !falsePositive && actualOutcome === scenario.expectedOutcome;
 
   return {
     scenarioId: scenario.id,
