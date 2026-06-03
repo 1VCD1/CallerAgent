@@ -114,7 +114,8 @@ async function simulateIvr(
       : '',
     `Output ONLY the spoken words — no labels, no stage directions. Return the single word NULL (no quotes) when the call is completely over.
 DTMF rule: When the caller's action is [DTMF: pressed key ...], you ALWAYS receive those digits — never say "I didn't catch that" for DTMF. Respond to what was pressed (e.g. wrong number of digits, unrecognized account, routing to correct department).
-HUMAN AGENT rule: The moment you transition from automated IVR to a live human agent speaking, prefix your response with [HUMAN] (e.g. "[HUMAN] Thank you for holding, this is Sarah..."). Keep [HUMAN] on every subsequent turn as long as a human agent is speaking.`,
+HUMAN AGENT rule: The moment you transition from automated IVR to a live human agent speaking, prefix your response with [HUMAN] (e.g. "[HUMAN] Thank you for holding, this is Sarah..."). Keep [HUMAN] on every subsequent turn as long as a human agent is speaking.
+HOLD rule: After saying "please hold" or "transferring you" once or twice, the human agent MUST pick up on the next turn. Do NOT repeat hold music more than 2 times — the human answers after a realistic hold.`,
   ].filter(Boolean).join('\n\n');
 
   const messages: OpenAI.ChatCompletionMessageParam[] = [
@@ -272,7 +273,7 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
 
       const actionText = action.action === 'press_key'  ? `[Press ${action.value}]`
                        : action.action === 'say_phrase' ? action.value ?? ''
-                       : action.action === 'wait'       ? `[Wait ${action.value}s]`
+                       : action.action === 'wait'       ? `[Wait ${action.value ?? 3}s]`
                        : `[${action.action}]`;
       transcript.push({ turn: turnNum, role: 'AI', text: actionText });
 
