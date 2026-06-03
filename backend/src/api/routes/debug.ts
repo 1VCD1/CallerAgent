@@ -329,11 +329,11 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.post('/debug/test/scenarios', async (request) => {
     const b = request.body as any;
     return queryOne<any>(
-      `INSERT INTO test_scenarios (name, company, goal, ivr_persona, expected_outcome, has_human, max_turns, tags, user_info, reference_call_ids)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      `INSERT INTO test_scenarios (name, company, goal, ivr_persona, expected_outcome, has_human, max_turns, tags, user_info, reference_call_ids, phone_number)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [b.name, b.company, b.goal ?? 'reach_human', b.ivr_persona ?? '',
        b.expected_outcome, b.has_human ?? false, b.max_turns ?? 20, b.tags ?? [],
-       b.user_info ?? null, b.reference_call_ids ?? []]
+       b.user_info ?? null, b.reference_call_ids ?? [], b.phone_number ?? null]
     );
   });
 
@@ -344,7 +344,7 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
     const fields: string[] = [];
     const values: any[] = [];
     let i = 1;
-    for (const key of ['name','company','goal','ivr_persona','expected_outcome','has_human','max_turns','tags','user_info','reference_call_ids']) {
+    for (const key of ['name','company','goal','ivr_persona','expected_outcome','has_human','max_turns','tags','user_info','reference_call_ids','phone_number']) {
       if (key in b) { fields.push(`${key} = $${i++}`); values.push(b[key]); }
     }
     if (!fields.length) return { ok: true };

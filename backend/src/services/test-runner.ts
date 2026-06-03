@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne } from '../db/client';
 import { decideLLMAction } from './llm-engine';
+import { getMemoryPatterns, getIvrDecisionTree } from './memory';
 import { config } from '../config';
 import { CallContext, LLMAction } from '../types';
 import {
@@ -31,6 +32,7 @@ export interface TestScenario {
   hasHuman: boolean;
   maxTurns: number;
   tags: string[];
+  phoneNumber?: string;  // IVR's actual phone number — used to load production memory
   userInfo?: { name?: string; phoneNumber?: string; birthday?: string };
   referenceCallIds?: string[];
 }
@@ -207,8 +209,8 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
           .filter(t => t.role === 'AI')
           .slice(-10)
           .map(t => ({ action: 'say_phrase' as const, value: t.text, success: true, timestamp: new Date() })),
-        historicalMemory: [],
-        ivrDecisionTree: [],
+        historicalMemory: await getMemoryPatterns(scenario.company, scenario.goal, scenario.phoneNumber),
+        ivrDecisionTree: scenario.phoneNumber ? await getIvrDecisionTree(scenario.phoneNumber) : [],
         recentFailures: [...recentFailures.slice(-5)],
         consecutiveWaits,
         consecutiveSamePhrase: samePhrase,
@@ -335,6 +337,7 @@ export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
     id: string; name: string; company: string; goal: string;
     ivr_persona: string; expected_outcome: string;
     has_human: boolean; max_turns: number; tags: string[];
+    phone_number: string | null;
     user_info: { name?: string; phoneNumber?: string; birthday?: string } | null;
     reference_call_ids: string[] | null;
   }>(`SELECT * FROM test_scenarios ORDER BY created_at`);
@@ -364,6 +367,7 @@ export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
       hasHuman: row.has_human,
       maxTurns: row.max_turns,
       tags: row.tags ?? [],
+      phoneNumber: row.phone_number ?? undefined,
       userInfo: row.user_info ?? undefined,
       referenceCallIds: row.reference_call_ids ?? [],
     };

@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS test_scenarios (
   company TEXT NOT NULL,
   goal TEXT NOT NULL DEFAULT 'reach_human',
   ivr_persona TEXT NOT NULL DEFAULT '',  -- optional: auto-generated from company+goal if short/empty
+  phone_number TEXT DEFAULT NULL,        -- IVR's actual phone number — used to load production memory
   expected_outcome TEXT NOT NULL,   -- 'human_reached' | 'outside_hours' | 'no_human_path' | etc.
   has_human BOOLEAN NOT NULL DEFAULT false,  -- does this scenario end with a real human?
   max_turns INTEGER NOT NULL DEFAULT 20,
@@ -130,6 +131,7 @@ CREATE TABLE IF NOT EXISTS test_scenarios (
 ALTER TABLE test_scenarios ADD COLUMN IF NOT EXISTS user_info JSONB DEFAULT NULL;
 ALTER TABLE test_scenarios ADD COLUMN IF NOT EXISTS reference_call_ids TEXT[] DEFAULT '{}';
 ALTER TABLE test_scenarios ALTER COLUMN ivr_persona SET DEFAULT '';
+ALTER TABLE test_scenarios ADD COLUMN IF NOT EXISTS phone_number TEXT DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS test_runs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
