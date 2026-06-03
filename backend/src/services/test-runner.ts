@@ -81,13 +81,10 @@ async function buildFewShotExamples(callIds: string[]): Promise<string> {
 
 function buildPersona(company: string, goal: string, ivrPersona: string, hasHuman: boolean): string {
   if (ivrPersona.length > 80) return ivrPersona;
-  const goalDesc = goal === 'reach_human' || goal === 'billing'
-    ? 'connect the caller to a live agent'
-    : goal;
   const transferLine = hasHuman
-    ? `This IVR DOES have a live human agent path. Transfer to a human agent once you understand the caller's issue.`
-    : `This IVR does NOT transfer to a human agent. All issues are handled through automated self-service only.`;
-  return `You are ${company}'s automated phone IVR system. Your goal is to verify the caller's identity, understand their reason for calling (${goalDesc}), and route them appropriately. ${transferLine}`;
+    ? `Human agents are available but gated — only transfer after full verification AND after attempting at least one self-service resolution. If the caller just says "agent" or "human" without going through the menu, redirect them back to the menu options first.`
+    : `This system is fully automated. There is no human agent path.`;
+  return `You are ${company}'s automated phone IVR. You are thorough and protective of agent time. Before transferring to a human, you: (1) play a full multi-option menu and wait for the caller to select, (2) verify their identity by collecting their account phone number or account number, (3) attempt to resolve the issue through self-service options. You react realistically to unexpected inputs — if the caller presses a wrong key or says something unclear, ask them to try again. ${transferLine}`;
 }
 
 // IVR simulator: given conversation history and AI's last action, produce next IVR utterance
