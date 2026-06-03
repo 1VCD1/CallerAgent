@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { query, queryOne } from '../../db/client';
-import { runAllTests } from '../../services/test-runner';
+import { runAllTests, startTestRun } from '../../services/test-runner';
 import OpenAI from 'openai';
 import { config } from '../../config';
 
@@ -360,10 +360,11 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
     return { ok: true };
   });
 
-  // Trigger a test run (async — returns runId immediately, run happens in background)
+  // Trigger a test run — creates run record immediately, returns runId, runs in background
   fastify.post('/debug/test/run', async () => {
-    runAllTests('manual').catch(err => console.error('[TestRunner] Run failed:', err));
-    return { status: 'started' };
+    const runId = await startTestRun('manual');
+    runAllTests('manual', runId).catch(err => console.error('[TestRunner] Run failed:', err));
+    return { status: 'started', runId };
   });
 
   // Auto-generate a test scenario from a real call transcript

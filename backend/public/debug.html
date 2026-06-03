@@ -1429,13 +1429,13 @@ async function triggerTestRun() {
   document.getElementById('test-results-list').innerHTML =
     '<div class="text-slate-500 text-sm animate-pulse">Running all scenarios — this takes 3-5 minutes...</div>';
 
-  await api('/debug/test/run').catch(() => null);
+  const { runId } = await api('/debug/test/run').catch(() => ({}));
 
-  // Poll until done
+  // Poll the specific run until it finishes
   const poll = setInterval(async () => {
-    const runs = await api('/debug/test/runs').catch(() => []);
-    const latest = runs[0];
-    if (latest?.ended_at) {
+    if (!runId) { clearInterval(poll); return; }
+    const run = await fetch(`/debug/test/runs/${runId}`).then(r => r.json()).catch(() => null);
+    if (run?.run?.ended_at) {
       clearInterval(poll);
       btn.textContent = 'Run Tests';
       btn.disabled = false;

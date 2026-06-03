@@ -335,7 +335,18 @@ export async function getLastTestedCommit(): Promise<string | null> {
   return row?.commit_sha ?? null;
 }
 
-export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
+export async function startTestRun(triggeredBy = 'manual'): Promise<string> {
+  const commitSha = process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ?? null;
+  const commitMsg = process.env.RAILWAY_GIT_COMMIT_MESSAGE?.split('\n')[0].slice(0, 120) ?? null;
+  const runRow = await queryOne<{ id: string }>(
+    `INSERT INTO test_runs (triggered_by, commit_sha, commit_message, total_scenarios)
+     VALUES ($1, $2, $3, 0) RETURNING id`,
+    [triggeredBy, commitSha, commitMsg]
+  );
+  return runRow!.id;
+}
+
+export async function runAllTests(triggeredBy = 'manual', existingRunId?: string): Promise<string> {
   const scenarios = await query<{
     id: string; name: string; company: string; goal: string;
     ivr_persona: string; expected_outcome: string;
@@ -350,12 +361,21 @@ export async function runAllTests(triggeredBy = 'manual'): Promise<string> {
   const commitSha = process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ?? null;
   const commitMsg = process.env.RAILWAY_GIT_COMMIT_MESSAGE?.split('\n')[0].slice(0, 120) ?? null;
 
-  const runRow = await queryOne<{ id: string }>(
-    `INSERT INTO test_runs (triggered_by, commit_sha, commit_message, total_scenarios)
-     VALUES ($1, $2, $3, $4) RETURNING id`,
-    [triggeredBy, commitSha, commitMsg, scenarios.length]
-  );
-  const runId = runRow!.id;
+  let runId: string;
+  if (existingRunId) {
+    runId = existingRunId;
+    await query(
+      `UPDATE test_runs SET total_scenarios = $1 WHERE id = $2`,
+      [scenarios.length, runId]
+    );
+  } else {
+    const runRow = await queryOne<{ id: string }>(
+      `INSERT INTO test_runs (triggered_by, commit_sha, commit_message, total_scenarios)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [triggeredBy, commitSha, commitMsg, scenarios.length]
+    );
+    runId = runRow!.id;
+  }
 
   const results: ScenarioResult[] = [];
 
