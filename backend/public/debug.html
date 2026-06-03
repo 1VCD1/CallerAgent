@@ -1201,9 +1201,15 @@ function outcomeLabel(outcome) {
 
 function outcomePill(call) {
   const raw = call.ended_reason ?? call.status;
-  const outcome = call.human_reached ? 'human_reached'
+  // user_confirmed overrides AI: true = human was there, false = AI mistake
+  const effectiveHuman = call.user_confirmed !== null && call.user_confirmed !== undefined
+    ? call.user_confirmed
+    : call.human_reached;
+  const outcome = effectiveHuman ? 'human_reached'
                 : raw === 'completed' ? 'no_human_path'
                 : raw;
+  const userLabel = call.user_confirmed !== null && call.user_confirmed !== undefined
+    ? `<span class="ml-1 text-xs opacity-60">(confirmed)</span>` : '';
   const colors = {
     human_reached: 'bg-emerald-900 text-emerald-300',
     no_human_path: 'bg-red-900 text-red-300',
@@ -1220,7 +1226,7 @@ function outcomePill(call) {
     ENDED: 'bg-slate-700 text-slate-400',
   };
   const cls = colors[outcome] ?? 'bg-slate-700 text-slate-400';
-  return `<span class="badge ${cls}">${outcomeLabel(outcome)}</span>`;
+  return `<span class="badge ${cls}">${outcomeLabel(outcome)}${userLabel}</span>`;
 }
 
 function fmtSecs(s) {

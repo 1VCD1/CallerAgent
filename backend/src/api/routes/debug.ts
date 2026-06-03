@@ -256,6 +256,7 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
         c.ended_at,
         c.status,
         c.human_reached,
+        c.user_confirmed,
         c.ended_reason,
         EXTRACT(EPOCH FROM (COALESCE(c.ended_at, NOW()) - c.started_at))::int     AS duration_secs,
         COUNT(dl.id) FILTER (WHERE dl.event_type = 'llm_decision')                AS decision_count,
