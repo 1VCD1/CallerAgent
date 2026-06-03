@@ -175,26 +175,21 @@
   </div>
 
   <!-- Metric explanation cards -->
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+  <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
     <div class="bg-slate-800 rounded-lg p-4 border border-blue-800">
-      <div class="text-blue-400 text-xs font-semibold mb-1">AI Accuracy</div>
+      <div class="text-blue-400 text-xs font-semibold mb-1">Success Rate</div>
       <div id="metric-accuracy-ctrl" class="text-3xl font-bold text-slate-400">—</div>
-      <div class="text-slate-500 text-xs mt-2 leading-relaxed">Scenarios where AI made the right call — <em>excluding</em> force majeure (closed, voicemail, wrong number). This is what AI logic changes actually affect.</div>
+      <div class="text-slate-500 text-xs mt-2 leading-relaxed">有真人路徑的場景中，AI 成功導航並接到真人的比率。</div>
     </div>
     <div class="bg-slate-800 rounded-lg p-4">
-      <div class="text-slate-400 text-xs font-semibold mb-1">Overall Accuracy</div>
-      <div id="metric-accuracy" class="text-3xl font-bold text-slate-400">—</div>
-      <div class="text-slate-500 text-xs mt-2 leading-relaxed">All scenarios including force majeure. Lower than AI Accuracy is expected and normal.</div>
-    </div>
-    <div class="bg-slate-800 rounded-lg p-4">
-      <div class="text-slate-400 text-xs font-semibold mb-1">Human Detection</div>
+      <div class="text-emerald-400 text-xs font-semibold mb-1">Human Detection Rate</div>
       <div id="metric-human" class="text-3xl font-bold text-slate-400">—</div>
-      <div class="text-slate-500 text-xs mt-2 leading-relaxed">Of scenarios with a real human, how many did AI detect and escalate? Critical metric.</div>
+      <div class="text-slate-500 text-xs mt-2 leading-relaxed">IVR 模擬器轉接真人後，AI 正確辨認出是真人的比率。</div>
     </div>
     <div class="bg-slate-800 rounded-lg p-4">
-      <div class="text-slate-400 text-xs font-semibold mb-1">False Positive Rate</div>
+      <div class="text-red-400 text-xs font-semibold mb-1">False Positive Rate</div>
       <div id="metric-fp" class="text-3xl font-bold text-slate-400">—</div>
-      <div class="text-slate-500 text-xs mt-2 leading-relaxed">No human but AI escalated anyway. Should be 0%. Lower is better.</div>
+      <div class="text-slate-500 text-xs mt-2 leading-relaxed">全程都是 IVR 沒有真人，但 AI 誤判為真人的比率。應為 0%。</div>
     </div>
   </div>
 
@@ -1422,10 +1417,9 @@ function renderTestResults(data) {
     document.getElementById(id).className = `text-3xl font-bold ${colorFn(val)}`;
     document.getElementById(id).textContent = pct(val);
   };
-  setMetric('metric-accuracy-ctrl', r.accuracy_controllable, v => color(v, 0.8, 0.5));
-  setMetric('metric-accuracy',      r.accuracy,              v => color(v, 0.8, 0.5));
-  setMetric('metric-human',         r.human_detection_rate,  v => color(v, 0.9, 0.7));
-  setMetric('metric-fp',            r.false_positive_rate,   fpColor);
+  setMetric('metric-accuracy-ctrl', r.accuracy,             v => color(v, 0.8, 0.5));
+  setMetric('metric-human',        r.human_detection_rate,  v => color(v, 0.9, 0.7));
+  setMetric('metric-fp',           r.false_positive_rate,   fpColor);
 
   const ago = relTime(r.started_at);
   document.getElementById('test-run-meta').textContent =
@@ -1486,7 +1480,7 @@ function renderRunHistory(runs) {
       <span class="text-slate-600 w-20 shrink-0">${relTime(r.started_at)}</span>
       <span class="font-bold ${color} w-10">${pct(r.accuracy)}</span>
       <span class="text-slate-500">${r.passed}/${r.total_scenarios}</span>
-      <span class="text-slate-600">H:${pct(r.human_detection_rate)}</span>
+      <span class="text-slate-600">Det:${pct(r.human_detection_rate)}</span>
       <span class="text-slate-600">FP:${pct(r.false_positive_rate)}</span>
       <span class="text-slate-700 text-xs">${trigger}</span>
       ${sha}${msg}
@@ -1512,19 +1506,13 @@ function renderRunHistory(runs) {
       labels,
       datasets: [
         {
-          label: 'AI Accuracy (excl. force majeure)',
-          data: ordered.map(r => pctVal(r.accuracy_controllable)),
+          label: 'Success Rate',
+          data: ordered.map(r => pctVal(r.accuracy)),
           borderColor: '#3b82f6', backgroundColor: '#3b82f620',
           pointRadius: 5, tension: 0.2, fill: false, borderWidth: 2,
         },
         {
-          label: 'Overall Accuracy',
-          data: ordered.map(r => pctVal(r.accuracy)),
-          borderColor: '#64748b', backgroundColor: '#64748b20',
-          pointRadius: 4, tension: 0.2, fill: false, borderDash: [4,3],
-        },
-        {
-          label: 'Human Detection',
+          label: 'Human Detection Rate',
           data: ordered.map(r => pctVal(r.human_detection_rate)),
           borderColor: '#10b981', backgroundColor: '#10b98120',
           pointRadius: 5, tension: 0.2, fill: false,
