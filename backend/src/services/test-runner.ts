@@ -282,7 +282,17 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
 
       // Terminal: AI ended the call
       if (action.action === 'end_call') {
-        actualOutcome = action.endedReason ?? 'completed';
+        // Auto-detect callback outcome from transcript if endedReason not explicit
+        if (!action.endedReason || action.endedReason === 'completed') {
+          const recentIvr = transcript.filter(t => t.role === 'IVR').slice(-3).map(t => t.text).join(' ');
+          if (isCallbackOffer(recentIvr)) {
+            actualOutcome = 'callback_offered';
+          } else {
+            actualOutcome = action.endedReason ?? 'completed';
+          }
+        } else {
+          actualOutcome = action.endedReason;
+        }
         break;
       }
 
