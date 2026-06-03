@@ -156,6 +156,12 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
     const fewShotExamples = await buildFewShotExamples(scenario.referenceCallIds ?? []);
     const persona = buildPersona(scenario.company, scenario.goal, scenario.ivrPersona, scenario.hasHuman);
 
+    // Load memory once before the loop — not per turn (avoids repeated embedding API calls)
+    const [historicalMemory, ivrDecisionTree] = await Promise.all([
+      getMemoryPatterns(scenario.company, scenario.goal, scenario.phoneNumber),
+      scenario.phoneNumber ? getIvrDecisionTree(scenario.phoneNumber) : Promise.resolve([]),
+    ]);
+
     // Initial IVR greeting
     const greeting = await simulateIvr(persona, [], null, fewShotExamples);
     if (greeting) {
@@ -206,8 +212,8 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
           .filter(t => t.role === 'AI')
           .slice(-10)
           .map(t => ({ action: 'say_phrase' as const, value: t.text, success: true, timestamp: new Date() })),
-        historicalMemory: await getMemoryPatterns(scenario.company, scenario.goal, scenario.phoneNumber),
-        ivrDecisionTree: scenario.phoneNumber ? await getIvrDecisionTree(scenario.phoneNumber) : [],
+        historicalMemory,
+        ivrDecisionTree,
         recentFailures: [...recentFailures.slice(-5)],
         consecutiveWaits,
         consecutiveSamePhrase: samePhrase,
