@@ -1374,7 +1374,10 @@ function renderMemoryDetail(phoneNumber, { patterns, nodes, ivrNote, userNotes, 
 let _testingLoaded = false;
 
 async function loadTesting() {
-  if (_testingLoaded) return;
+  if (_testingLoaded) {
+    renderScenariosList(); // always refresh scenarios list on tab switch
+    return;
+  }
   _testingLoaded = true;
   const [data, runs] = await Promise.all([
     api('/debug/test/latest').catch(() => null),
