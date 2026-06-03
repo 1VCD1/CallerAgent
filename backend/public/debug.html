@@ -1628,7 +1628,7 @@ async function generateScenario() {
     const transcript = (data.transcripts ?? [])
       .map(t => `${t.speaker}: ${t.text}`).join('\n');
     const outcome = data.call.ended_reason ?? data.call.status;
-    const hasHuman = !!(data.call.human_reached || data.call.user_confirmed);
+    const hasHuman = data.call.user_confirmed !== null && data.call.user_confirmed !== undefined ? !!data.call.user_confirmed : !!data.call.human_reached;
 
     const resp = await fetch('/debug/test/generate-scenario', {
       method: 'POST',
