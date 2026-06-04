@@ -343,11 +343,14 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
   }
 
   // Ground truth = what the IVR simulator actually did
-  // If IVR produced [HUMAN] → pass iff AI detected it
-  // If IVR never produced [HUMAN] → no false escalation AND actualOutcome matches expectedOutcome
+  // If IVR produced [HUMAN] → pass iff AI detected it (detection test)
+  // If IVR never produced [HUMAN] AND scenario has_human=true → only check AI didn't false-positive (we chose no human this run)
+  // If IVR never produced [HUMAN] AND scenario has_human=false → normal outcome comparison
   const passed = humanAppearedInIvr
     ? humanDetected
-    : !falsePositive && actualOutcome === scenario.expectedOutcome;
+    : scenario.hasHuman
+      ? !falsePositive
+      : !falsePositive && actualOutcome === scenario.expectedOutcome;
 
   return {
     scenarioId: scenario.id,
