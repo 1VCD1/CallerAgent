@@ -168,7 +168,9 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
 
   try {
     const fewShotExamples = await buildFewShotExamples(scenario.referenceCallIds ?? []);
-    const persona = buildPersona(scenario.company, scenario.goal, scenario.ivrPersona, scenario.hasHuman);
+    // For has_human scenarios, randomly decide if a human will appear this run
+    const hasHumanThisRun = scenario.hasHuman ? Math.random() < 0.5 : false;
+    const persona = buildPersona(scenario.company, scenario.goal, scenario.ivrPersona, hasHumanThisRun);
 
     // Load memory once before the loop — not per turn (avoids repeated embedding API calls)
     const [historicalMemory, ivrDecisionTree] = await Promise.all([
