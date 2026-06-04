@@ -1480,8 +1480,8 @@ async function renderScenariosList() {
   }
   el.innerHTML = scenarios.map(s => {
     const tag = s.has_human
-      ? '<span class="text-blue-400 text-xs">has human</span>'
-      : '<span class="text-slate-500 text-xs">no human</span>';
+      ? '<span class="text-blue-400 text-xs">human possible</span>'
+      : '<span class="text-slate-500 text-xs">no human path</span>';
     return `<div class="flex items-center gap-2 text-xs border border-slate-700 rounded px-3 py-2">
       <span class="text-slate-200 flex-1 truncate" title="${s.name}">${s.name}</span>
       ${tag}
@@ -1544,11 +1544,11 @@ function renderTestResults(data) {
   document.getElementById('test-results-list').innerHTML = data.results.map(s => {
     const pass = s.passed;
     const rowBg = pass ? 'bg-emerald-950 border-emerald-800' : 'bg-red-950 border-red-900';
-    const tag = s.has_human ? 'has human' : 'no human';
-    const tagColor = s.has_human ? 'bg-blue-900 text-blue-300' : 'bg-slate-700 text-slate-400';
+    const tag = s.human_appeared_in_ivr ? 'human in IVR' : 'no human';
+    const tagColor = s.human_appeared_in_ivr ? 'bg-blue-900 text-blue-300' : 'bg-slate-700 text-slate-400';
     const humanBadge = s.human_detected
       ? '<span class="badge bg-emerald-900 text-emerald-300 text-xs">human detected</span>'
-      : s.has_human
+      : s.human_appeared_in_ivr
         ? '<span class="badge bg-red-900 text-red-300 text-xs">human MISSED</span>'
         : '';
     const fpBadge = s.false_positive
