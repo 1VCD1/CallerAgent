@@ -319,7 +319,8 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
         actualOutcome = 'call_ended_by_ivr';
         break;
       }
-      const ivrIsHuman = rawIvrResponse.includes('[HUMAN]');
+      // Enforce randomization: if this run decided no human, strip [HUMAN] regardless of what GPT-4o says
+      const ivrIsHuman = rawIvrResponse.includes('[HUMAN]') && hasHumanThisRun;
       if (ivrIsHuman) humanAppearedInIvr = true;
       const ivrResponse = rawIvrResponse.replace(/\[HUMAN\]\s*/g, '');
       transcript.push({ turn: turnNum, role: 'IVR', text: ivrResponse });
