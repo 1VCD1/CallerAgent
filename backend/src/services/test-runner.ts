@@ -343,8 +343,12 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
   }
 
   // IVR simulator is ground truth — it knows best whether a human appeared
-  // human appeared → did AI detect it? | no human → did AI avoid false positive?
-  const passed = humanAppearedInIvr ? humanDetected : !falsePositive;
+  // human appeared → did AI detect it?
+  // no human → no false positive AND outcome is uncontrollable (max_attempts = navigation failure)
+  const uncontrollableOutcomes = ['outside_hours', 'wrong_number', 'voicemail', 'invalid_number', 'callback_offered', 'call_ended_by_ivr', 'user_cancelled'];
+  const passed = humanAppearedInIvr
+    ? humanDetected
+    : !falsePositive && uncontrollableOutcomes.includes(actualOutcome);
 
   return {
     scenarioId: scenario.id,
