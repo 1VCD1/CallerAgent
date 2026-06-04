@@ -302,11 +302,13 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
 
       // Terminal: AI ended the call
       if (action.action === 'end_call') {
-        // Auto-detect callback outcome from transcript if endedReason not explicit
+        // Auto-detect outcome from recent IVR if endedReason not explicit
         if (!action.endedReason || action.endedReason === 'completed') {
-          const recentIvr = transcript.filter(t => t.role === 'IVR').slice(-3).map(t => t.text).join(' ');
+          const recentIvr = transcript.filter(t => t.role === 'IVR').slice(-3).map(t => t.text).join(' ').toLowerCase();
           if (isCallbackOffer(recentIvr)) {
             actualOutcome = 'callback_offered';
+          } else if (/all agents.{0,30}unavailable|no agents.{0,20}available|try again later|try again soon|please try again|unable to (connect|transfer)|currently (closed|unavailable)|goodbye/i.test(recentIvr)) {
+            actualOutcome = 'agents_unavailable';
           } else {
             actualOutcome = action.endedReason ?? 'completed';
           }
@@ -342,7 +344,7 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
     };
   }
 
-  const uncontrollableOutcomes = ['outside_hours', 'wrong_number', 'voicemail', 'invalid_number', 'callback_offered', 'call_ended_by_ivr', 'user_cancelled'];
+  const uncontrollableOutcomes = ['outside_hours', 'wrong_number', 'voicemail', 'invalid_number', 'callback_offered', 'agents_unavailable', 'call_ended_by_ivr', 'user_cancelled'];
   // human appeared → did AI detect it? (pass/fail)
   // no human + uncontrollable → neutral (null), excluded from pass rate
   // no human + max_attempts or false positive → fail
