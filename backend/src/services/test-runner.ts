@@ -184,7 +184,7 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
       transcript.push({ turn: 0, role: 'IVR', text: greeting });
     }
 
-    while (turnNum < scenario.maxTurns) {
+    while (turnNum < scenario.maxTurns || (humanAppearedInIvr && !humanDetected && turnNum < scenario.maxTurns + 1)) {
       turnNum++;
       const currentIvrUtterance = transcript.filter(t => t.role === 'IVR').slice(-1)[0]?.text ?? '';
 
