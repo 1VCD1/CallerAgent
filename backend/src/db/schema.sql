@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS test_results (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   run_id UUID NOT NULL REFERENCES test_runs(id) ON DELETE CASCADE,
   scenario_id UUID NOT NULL REFERENCES test_scenarios(id) ON DELETE CASCADE,
-  passed BOOLEAN NOT NULL,
+  passed BOOLEAN, -- NULL = neutral (uncontrollable outcome, excluded from pass rate)
   actual_outcome TEXT NOT NULL,
   expected_outcome TEXT NOT NULL,
   turns INTEGER NOT NULL,

@@ -45,7 +45,7 @@ interface TurnRecord {
 
 interface ScenarioResult {
   scenarioId: string;
-  passed: boolean;
+  passed: boolean | null; // null = neutral (uncontrollable outcome)
   actualOutcome: string;
   expectedOutcome: string;
   turns: number;
@@ -342,13 +342,17 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
     };
   }
 
-  // IVR simulator is ground truth — it knows best whether a human appeared
-  // human appeared → did AI detect it?
-  // no human → no false positive AND outcome is uncontrollable (max_attempts = navigation failure)
   const uncontrollableOutcomes = ['outside_hours', 'wrong_number', 'voicemail', 'invalid_number', 'callback_offered', 'call_ended_by_ivr', 'user_cancelled'];
-  const passed = humanAppearedInIvr
+  // human appeared → did AI detect it? (pass/fail)
+  // no human + uncontrollable → neutral (null), excluded from pass rate
+  // no human + max_attempts or false positive → fail
+  const passed: boolean | null = humanAppearedInIvr
     ? humanDetected
-    : !falsePositive && uncontrollableOutcomes.includes(actualOutcome);
+    : falsePositive
+      ? false
+      : uncontrollableOutcomes.includes(actualOutcome)
+        ? null
+        : false;
 
   return {
     scenarioId: scenario.id,
@@ -458,14 +462,13 @@ export async function runAllTests(triggeredBy = 'manual', existingRunId?: string
   const falsePositiveRate = noHumanAppearedResults.length
     ? noHumanAppearedResults.filter(r => r.falsePositive).length / noHumanAppearedResults.length : null;
 
-  // Success rate (navigation): excluding uncontrollable outcomes, did AI reach a human?
-  // max_attempts without human = fail; human appeared + detected = pass; uncontrollable = excluded
-  const uncontrollableOutcomes = ['outside_hours', 'wrong_number', 'voicemail', 'invalid_number', 'callback_offered', 'call_ended_by_ivr', 'user_cancelled'];
-  const controllableResults = results.filter(r => !uncontrollableOutcomes.includes(r.actualOutcome) || r.humanAppearedInIvr);
-  const successRate = controllableResults.length
-    ? controllableResults.filter(r => r.humanDetected).length / controllableResults.length : null;
+  // Success rate: excludes neutral (uncontrollable) outcomes from denominator
+  const decidedResults = results.filter(r => r.passed !== null);
+  const successRate = decidedResults.length
+    ? decidedResults.filter(r => r.passed === true).length / decidedResults.length : null;
 
-  const passed = results.filter(r => r.passed).length;
+  const passed = results.filter(r => r.passed === true).length;
+  const neutral = results.filter(r => r.passed === null).length;
   const avgTurns = results.reduce((s, r) => s + r.turns, 0) / results.length;
 
   await query(
@@ -473,7 +476,7 @@ export async function runAllTests(triggeredBy = 'manual', existingRunId?: string
        passed=$1, failed=$2, accuracy=$3, accuracy_controllable=$4,
        human_detection_rate=$5, false_positive_rate=$6, avg_turns=$7, ended_at=NOW()
      WHERE id=$8`,
-    [passed, results.length - passed, successRate, successRate,
+    [passed, results.length - passed - neutral, successRate, successRate,
      humanDetectionRate, falsePositiveRate, avgTurns, runId]
   );
 

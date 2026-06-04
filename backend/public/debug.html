@@ -1543,7 +1543,8 @@ function renderTestResults(data) {
   if (!data.results?.length) return;
   document.getElementById('test-results-list').innerHTML = data.results.map(s => {
     const pass = s.passed;
-    const rowBg = pass ? 'bg-emerald-950 border-emerald-800' : 'bg-red-950 border-red-900';
+    const rowBg = pass === null ? 'bg-slate-900 border-slate-700'
+                : pass ? 'bg-emerald-950 border-emerald-800' : 'bg-red-950 border-red-900';
     const tag = s.human_appeared_in_ivr ? 'human in IVR' : 'no human';
     const tagColor = s.human_appeared_in_ivr ? 'bg-blue-900 text-blue-300' : 'bg-slate-700 text-slate-400';
     const humanBadge = s.human_detected
@@ -1562,7 +1563,7 @@ function renderTestResults(data) {
 
     return `<div class="border rounded-lg p-3 ${rowBg}">
       <div class="flex items-center gap-2 flex-wrap">
-        <span class="font-medium text-slate-100 text-sm">${pass ? '[PASS]' : '[FAIL]'} ${s.scenario_name}</span>
+        <span class="font-medium text-slate-100 text-sm">${pass === null ? '[N/A]' : pass ? '[PASS]' : '[FAIL]'} ${s.scenario_name}</span>
         <span class="badge ${tagColor} text-xs">${tag}</span>
         ${humanBadge}${fpBadge}
         <span class="ml-auto text-slate-500 text-xs">${s.turns} turns</span>
