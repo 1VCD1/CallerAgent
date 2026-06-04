@@ -430,12 +430,13 @@ export async function runAllTests(triggeredBy = 'manual', existingRunId?: string
 
     await query(
       `INSERT INTO test_results
-         (run_id, scenario_id, passed, actual_outcome, expected_outcome, turns, human_detected, false_positive, transcript, error)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+         (run_id, scenario_id, passed, actual_outcome, expected_outcome, turns, human_detected, human_appeared_in_ivr, false_positive, transcript, error)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         runId, result.scenarioId, result.passed, result.actualOutcome,
         result.expectedOutcome, result.turns, result.humanDetected,
-        result.falsePositive, JSON.stringify(result.transcript), result.error ?? null,
+        result.humanAppearedInIvr, result.falsePositive,
+        JSON.stringify(result.transcript), result.error ?? null,
       ]
     );
   }

@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS test_results (
   expected_outcome TEXT NOT NULL,
   turns INTEGER NOT NULL,
   human_detected BOOLEAN NOT NULL DEFAULT false,
+  human_appeared_in_ivr BOOLEAN NOT NULL DEFAULT false,
   false_positive BOOLEAN NOT NULL DEFAULT false,
   transcript JSONB NOT NULL DEFAULT '[]',   -- [{role:'IVR'|'AI', text, turn}]
   error TEXT,
