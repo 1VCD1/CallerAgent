@@ -443,21 +443,15 @@ export async function runAllTests(triggeredBy = 'manual', existingRunId?: string
     );
   }
 
-  const humanScenarios = results.filter(r => scenarios.find(s => s.id === r.scenarioId)?.has_human);
-  const noHumanScenarios = results.filter(r => !scenarios.find(s => s.id === r.scenarioId)?.has_human);
-
-  // Success rate: % of has_human scenarios where AI successfully reached a human (navigation metric)
-  const successRate = humanScenarios.length
-    ? humanScenarios.filter(r => r.humanDetected).length / humanScenarios.length : null;
-
-  // Human detection rate: when IVR simulator produced a human turn, did AI detect it? (detection metric)
+  // All metrics based on humanAppearedInIvr — IVR simulator is sole ground truth
   const humanAppearedResults = results.filter(r => r.humanAppearedInIvr);
+  const noHumanAppearedResults = results.filter(r => !r.humanAppearedInIvr);
+
   const humanDetectionRate = humanAppearedResults.length
     ? humanAppearedResults.filter(r => r.humanDetected).length / humanAppearedResults.length : null;
 
-  // False positive: AI escalated when there was no human in the scenario
-  const falsePositiveRate = noHumanScenarios.length
-    ? noHumanScenarios.filter(r => r.falsePositive).length / noHumanScenarios.length : null;
+  const falsePositiveRate = noHumanAppearedResults.length
+    ? noHumanAppearedResults.filter(r => r.falsePositive).length / noHumanAppearedResults.length : null;
 
   const passed = results.filter(r => r.passed).length;
   const avgTurns = results.reduce((s, r) => s + r.turns, 0) / results.length;
@@ -467,10 +461,10 @@ export async function runAllTests(triggeredBy = 'manual', existingRunId?: string
        passed=$1, failed=$2, accuracy=$3, accuracy_controllable=$4,
        human_detection_rate=$5, false_positive_rate=$6, avg_turns=$7, ended_at=NOW()
      WHERE id=$8`,
-    [passed, results.length - passed, successRate, successRate,
+    [passed, results.length - passed, humanDetectionRate, humanDetectionRate,
      humanDetectionRate, falsePositiveRate, avgTurns, runId]
   );
 
-  console.log(`[TestRunner] Done: ${passed}/${results.length} — success rate: ${Math.round((successRate??0)*100)}%, false positive: ${Math.round((falsePositiveRate??0)*100)}%`);
+  console.log(`[TestRunner] Done: ${passed}/${results.length} — detection rate: ${Math.round((humanDetectionRate??0)*100)}%, false positive: ${Math.round((falsePositiveRate??0)*100)}%`);
   return runId;
 }
