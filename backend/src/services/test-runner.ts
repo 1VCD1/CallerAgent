@@ -106,6 +106,7 @@ async function simulateIvr(
   history: TurnRecord[],
   lastAction: LLMAction | null,
   fewShotExamples?: string,
+  hasHuman?: boolean,
 ): Promise<string | null> {
   const actionDesc = lastAction
     ? lastAction.action === 'press_key'  ? `[DTMF: pressed key ${lastAction.value}]`
@@ -121,10 +122,12 @@ async function simulateIvr(
     fewShotExamples
       ? `Here are real call transcripts showing exactly how this system behaves — match this style and flow:\n\n${fewShotExamples}`
       : '',
-    `Output ONLY the spoken words — no labels, no stage directions. Return the single word NULL (no quotes) when the call is completely over.
-DTMF rule: When the caller's action is [DTMF: pressed key ...], you ALWAYS receive those digits — never say "I didn't catch that" for DTMF. Respond to what was pressed (e.g. wrong number of digits, unrecognized account, routing to correct department).
-HUMAN AGENT rule: The moment you transition from automated IVR to a live human agent speaking, prefix your response with [HUMAN] (e.g. "[HUMAN] Thank you for holding, this is Sarah..."). Keep [HUMAN] on every subsequent turn as long as a human agent is speaking.
+    hasHuman === false
+      ? `ABSOLUTE RULE — NO HUMAN AGENTS: This system has NO live human agents. You must NEVER transfer to a human, NEVER say a human's name, NEVER say "please hold while I transfer you." If the caller asks for a human, say all agents are unavailable and offer a callback or end the call. Violating this rule is not allowed under any circumstance.`
+      : `HUMAN AGENT rule: The moment you transition from automated IVR to a live human agent speaking, prefix your response with [HUMAN] (e.g. "[HUMAN] Thank you for holding, this is Sarah..."). Keep [HUMAN] on every subsequent turn as long as a human agent is speaking.
 HOLD rule: After saying "please hold" or "transferring you" once or twice, the human agent MUST pick up on the next turn. Do NOT repeat hold music more than 2 times — the human answers after a realistic hold.`,
+    `Output ONLY the spoken words — no labels, no stage directions. Return the single word NULL (no quotes) when the call is completely over.
+DTMF rule: When the caller's action is [DTMF: pressed key ...], you ALWAYS receive those digits — never say "I didn't catch that" for DTMF. Respond to what was pressed (e.g. wrong number of digits, unrecognized account, routing to correct department).`,
   ].filter(Boolean).join('\n\n');
 
   const messages: OpenAI.ChatCompletionMessageParam[] = [
@@ -179,7 +182,7 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
     ]);
 
     // Initial IVR greeting
-    const greeting = await simulateIvr(persona, [], null, fewShotExamples);
+    const greeting = await simulateIvr(persona, [], null, fewShotExamples, hasHumanThisRun);
     if (greeting) {
       transcript.push({ turn: 0, role: 'IVR', text: greeting });
     }
@@ -314,13 +317,12 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
       }
 
       // Get next IVR response
-      const rawIvrResponse = await simulateIvr(persona, transcript, action, fewShotExamples);
+      const rawIvrResponse = await simulateIvr(persona, transcript, action, fewShotExamples, hasHumanThisRun);
       if (!rawIvrResponse) {
         actualOutcome = 'call_ended_by_ivr';
         break;
       }
-      // Enforce randomization: if this run decided no human, strip [HUMAN] regardless of what GPT-4o says
-      const ivrIsHuman = rawIvrResponse.includes('[HUMAN]') && hasHumanThisRun;
+      const ivrIsHuman = rawIvrResponse.includes('[HUMAN]');
       if (ivrIsHuman) humanAppearedInIvr = true;
       const ivrResponse = rawIvrResponse.replace(/\[HUMAN\]\s*/g, '');
       transcript.push({ turn: turnNum, role: 'IVR', text: ivrResponse });
