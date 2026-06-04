@@ -436,6 +436,7 @@ export async function runAllTests(triggeredBy = 'manual', existingRunId?: string
       referenceCallIds: row.reference_call_ids ?? [],
     };
 
+    if (results.length > 0) await new Promise(r => setTimeout(r, 15000)); // 15s cooldown between scenarios to avoid TPM rate limit
     console.log(`[TestRunner] Running: ${scenario.name}`);
     const result = await runScenario(scenario);
     results.push(result);
