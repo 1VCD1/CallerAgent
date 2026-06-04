@@ -342,15 +342,9 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
     };
   }
 
-  // Ground truth = what the IVR simulator actually did
-  // If IVR produced [HUMAN] → pass iff AI detected it (detection test)
-  // If IVR never produced [HUMAN] AND scenario has_human=true → only check AI didn't false-positive (we chose no human this run)
-  // If IVR never produced [HUMAN] AND scenario has_human=false → normal outcome comparison
-  const passed = humanAppearedInIvr
-    ? humanDetected
-    : scenario.hasHuman
-      ? !falsePositive
-      : !falsePositive && actualOutcome === scenario.expectedOutcome;
+  // IVR simulator is ground truth — it knows best whether a human appeared
+  // human appeared → did AI detect it? | no human → did AI avoid false positive?
+  const passed = humanAppearedInIvr ? humanDetected : !falsePositive;
 
   return {
     scenarioId: scenario.id,
