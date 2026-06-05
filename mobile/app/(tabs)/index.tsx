@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
-import { startCall, getCalls, getCall, endCall, getApiUrl, getCompanyStats, getCompanySuggestions } from '@/api';
+import { startCall, getCalls, getCall, endCall, getApiUrl, getCompanyStats, getCompanySuggestions, getUser } from '@/api';
 import { useCallStore } from '@/store';
 import { useSSE } from '@/hooks/useSSE';
 import type { Call, CompanyStats } from '@/api';
@@ -306,9 +306,10 @@ export default function CallScreen() {
   const [loading, setLoading]     = useState(false);
   const [templates, setTemplates] = useState<CallTemplate[]>([]);
   const [sseUrl, setSseUrl]       = useState<string | null>(null);
+  const [hasCallbackPhone, setHasCallbackPhone] = useState<boolean | null>(null);
   const submitting = useRef(false);
 
-  const { activeCall, setActiveCall, setCallHistory, patchCall } = useCallStore();
+  const { activeCall, setActiveCall, setCallHistory, patchCall, userId } = useCallStore();
 
   useSSE(sseUrl, (event, data: any) => {
     if (event === 'status' && data?.callId && data?.status) {
@@ -357,6 +358,11 @@ export default function CallScreen() {
   };
 
   useEffect(() => { refresh(); loadTemplates(); }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+    getUser(userId).then(u => setHasCallbackPhone(!!u.phone_number)).catch(() => {});
+  }, [userId]);
 
   useEffect(() => {
     if (statsTimerRef.current) clearTimeout(statsTimerRef.current);
@@ -519,15 +525,22 @@ export default function CallScreen() {
             />
           </View>
 
-          <TouchableOpacity onPress={handleStart} disabled={loading} activeOpacity={0.85} style={s.startBtnWrap}>
+          {hasCallbackPhone === false && (
+            <TouchableOpacity onPress={() => router.push('/(tabs)/profile')} activeOpacity={0.8} style={s.callbackBanner}>
+              <Ionicons name="warning-outline" size={15} color="#f59e0b" />
+              <Text style={s.callbackBannerTxt}>{t('no_callback_banner')}</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity onPress={handleStart} disabled={loading || hasCallbackPhone === false} activeOpacity={0.85} style={s.startBtnWrap}>
             <LinearGradient
-              colors={['#25D366', '#128C4E']}
+              colors={hasCallbackPhone === false ? ['#374151', '#374151'] : ['#25D366', '#128C4E']}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               style={s.startBtn}
             >
               {loading
                 ? <ActivityIndicator color="#fff" />
-                : <><Ionicons name="sparkles" size={20} color="#fff" /><Text style={s.startBtnTxt}>{t('start_call')}</Text></>
+                : <><Ionicons name="sparkles" size={20} color={hasCallbackPhone === false ? '#6b7280' : '#fff'} /><Text style={[s.startBtnTxt, hasCallbackPhone === false && { color: '#6b7280' }]}>{t('start_call')}</Text></>
               }
             </LinearGradient>
           </TouchableOpacity>
@@ -635,6 +648,8 @@ const s = StyleSheet.create({
   statsHint:      { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -6, marginBottom: 10, paddingHorizontal: 4 },
   statsHintTxt:   { fontSize: 11, color: colors.muted },
 
+  callbackBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#451a03', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 10 },
+  callbackBannerTxt: { flex: 1, color: '#f59e0b', fontSize: 13, lineHeight: 18 },
   startBtnWrap: { borderRadius: 18, overflow: 'hidden', marginTop: 4 },
   startBtn:     { paddingVertical: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   startBtnTxt:  { color: '#fff', fontSize: 16, fontWeight: '700' },

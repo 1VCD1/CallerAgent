@@ -26,6 +26,7 @@ const en = {
   callback_required_title: 'Callback phone required',
   callback_required_body: 'Add your callback phone number in the You tab — we need it to connect you when a human answers.',
   go_to_profile: 'Go to Profile',
+  no_callback_banner: 'Add a callback phone in the You tab to start calls.',
   end: 'End',
   sounds_human: 'Sounds like a real person…',
   live_transcript: 'Live Transcript',

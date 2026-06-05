@@ -26,6 +26,7 @@ const zhTW = {
   callback_required_title: '需要回撥號碼',
   callback_required_body: '請在「個人」頁面填寫回撥號碼，真人接聽時我們才能轉接給你。',
   go_to_profile: '前往個人頁面',
+  no_callback_banner: '請先在「個人」頁面填寫回撥號碼才能開始通話。',
   end: '結束',
   sounds_human: '聽起來像真人…',
   live_transcript: '即時對話',

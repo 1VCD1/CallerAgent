@@ -26,6 +26,7 @@ const zhCN = {
   callback_required_title: '需要回拨号码',
   callback_required_body: '请在「个人」页面填写回拨号码，真人接听时我们才能转接给你。',
   go_to_profile: '前往个人页面',
+  no_callback_banner: '请先在「个人」页面填写回拨号码才能开始通话。',
   end: '结束',
   sounds_human: '听起来像真人…',
   live_transcript: '实时对话',
