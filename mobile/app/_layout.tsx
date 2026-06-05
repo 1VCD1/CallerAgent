@@ -7,7 +7,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { onAuthStateChanged, User } from '@/firebase';
-import { authLogin, updateUser, getApiUrl, ensureDevUser } from '@/api';
+import { authLogin, updateUser, getApiUrl } from '@/api';
 import { useCallStore } from '@/store';
 import i18n from '@/i18n';
 
@@ -43,14 +43,11 @@ async function registerPushToken(userId: string) {
   await updateUser(userId, { pushToken: token });
 }
 
-const DEV_SKIP_AUTH = __DEV__;
-
 function useProtectedRoute(user: User | null | undefined) {
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
-    if (DEV_SKIP_AUTH) return; // bypass auth in Expo Go for UI development
     if (user === undefined) return;
     const inSignIn = segments[0] === 'sign-in';
     if (!user && !inSignIn) {
@@ -89,13 +86,6 @@ export default function RootLayout() {
     };
   }, []);
 
-  useEffect(() => {
-    if (DEV_SKIP_AUTH) {
-      authLogin()
-        .then(p => { setUserId(p.id); setCallbackPhone(p.phone_number ?? null); })
-        .catch(() => ensureDevUser().then(id => setUserId(id)).catch(console.warn));
-    }
-  }, []);
 
   useEffect(() => {
     return onAuthStateChanged(async (firebaseUser) => {
@@ -119,7 +109,7 @@ export default function RootLayout() {
 
   useProtectedRoute(user);
 
-  if (!DEV_SKIP_AUTH && user === undefined) {
+  if (user === undefined) {
     return (
       <View style={{ flex: 1, backgroundColor: '#020617', alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color="#3b82f6" size="large" />

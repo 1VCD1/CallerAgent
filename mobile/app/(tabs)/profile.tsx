@@ -61,9 +61,7 @@ export default function ProfileScreen() {
 
   const save = async () => {
     if (!userId) {
-      await setApiUrl(apiUrl.trim() || 'http://localhost:3000');
-      await setApiKey(apiKey.trim());
-      setSaved(true); setTimeout(() => setSaved(false), 2500);
+      Alert.alert('Not signed in', 'Please sign in first.');
       return;
     }
     setSaving(true);
