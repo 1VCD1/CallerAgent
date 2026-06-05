@@ -63,7 +63,7 @@ function useProtectedRoute(user: User | null | undefined) {
 
 export default function RootLayout() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
-  const { setUserId } = useCallStore();
+  const { setUserId, setCallbackPhone } = useCallStore();
   const router = useRouter();
   const notifResponseRef = useRef<any>(null);
 
@@ -91,7 +91,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (DEV_SKIP_AUTH) {
-      ensureDevUser().then(id => setUserId(id)).catch(console.warn);
+      authLogin()
+        .then(p => { setUserId(p.id); setCallbackPhone(p.phone_number ?? null); })
+        .catch(() => ensureDevUser().then(id => setUserId(id)).catch(console.warn));
     }
   }, []);
 
@@ -102,6 +104,7 @@ export default function RootLayout() {
         try {
           const profile = await authLogin();
           setUserId(profile.id);
+          setCallbackPhone(profile.phone_number ?? null);
           if (profile.language) i18n.changeLanguage(profile.language);
           await registerPushToken(profile.id).catch(console.warn);
         } catch (err) {
@@ -109,6 +112,7 @@ export default function RootLayout() {
         }
       } else {
         setUserId(null);
+        setCallbackPhone(null);
       }
     });
   }, []);

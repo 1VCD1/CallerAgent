@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
 import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
-import { startCall, getCalls, getCall, endCall, getApiUrl, getCompanyStats, getCompanySuggestions, getUser } from '@/api';
+import { startCall, getCalls, getCall, endCall, getApiUrl, getCompanyStats, getCompanySuggestions } from '@/api';
 import { useCallStore } from '@/store';
 import { useSSE } from '@/hooks/useSSE';
 import type { Call, CompanyStats } from '@/api';
@@ -306,10 +306,10 @@ export default function CallScreen() {
   const [loading, setLoading]     = useState(false);
   const [templates, setTemplates] = useState<CallTemplate[]>([]);
   const [sseUrl, setSseUrl]       = useState<string | null>(null);
-  const [hasCallbackPhone, setHasCallbackPhone] = useState<boolean | null>(null);
   const submitting = useRef(false);
 
-  const { activeCall, setActiveCall, setCallHistory, patchCall, userId } = useCallStore();
+  const { activeCall, setActiveCall, setCallHistory, patchCall, callbackPhone } = useCallStore();
+  const hasCallbackPhone = callbackPhone !== null;
 
   useSSE(sseUrl, (event, data: any) => {
     if (event === 'status' && data?.callId && data?.status) {
@@ -358,11 +358,6 @@ export default function CallScreen() {
   };
 
   useEffect(() => { refresh(); loadTemplates(); }, []);
-
-  useEffect(() => {
-    if (!userId) return;
-    getUser(userId).then(u => setHasCallbackPhone(!!u.phone_number)).catch(() => {});
-  }, [userId]);
 
   useEffect(() => {
     if (statsTimerRef.current) clearTimeout(statsTimerRef.current);

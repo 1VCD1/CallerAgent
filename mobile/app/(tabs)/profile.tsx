@@ -22,7 +22,7 @@ const LANG_OPTIONS: { value: AppLanguage; tKey: string }[] = [
 
 export default function ProfileScreen() {
   const { t } = useTranslation();
-  const { userId } = useCallStore();
+  const { userId, setCallbackPhone } = useCallStore();
   const firebaseUser = auth.currentUser;
 
   const [name, setName]         = useState('');
@@ -80,6 +80,7 @@ export default function ProfileScreen() {
       if (email.trim())    data.email    = email.trim();
       data.language = language;
       if (Object.keys(data).length) await updateUser(userId, data);
+      if (phone.trim()) setCallbackPhone(data.phoneNumber ?? null);
       i18n.changeLanguage(language);
       setSaved(true); setEditMode(false);
       setTimeout(() => setSaved(false), 2500);
