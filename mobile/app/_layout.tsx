@@ -1,6 +1,6 @@
 import '@/i18n'; // initialize i18n before anything renders
 import { useEffect, useRef, useState } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Alert } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
@@ -97,8 +97,8 @@ export default function RootLayout() {
           setCallbackPhone(profile.phone_number ?? null);
           if (profile.language) i18n.changeLanguage(profile.language);
           await registerPushToken(profile.id).catch(console.warn);
-        } catch (err) {
-          console.warn('[Auth] authLogin failed:', err);
+        } catch (err: any) {
+          Alert.alert('Sign-in error', err?.message ?? String(err));
         }
       } else {
         setUserId(null);
