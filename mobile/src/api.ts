@@ -94,11 +94,12 @@ export async function ensureDevUser(): Promise<string> {
 
 export async function authLogin(): Promise<UserProfile> {
   const url = await getApiUrl();
-  const res = await fetch(`${url}/auth/login`, {
-    method: 'POST',
-    headers: await getHeaders(),
-  });
-  if (!res.ok) throw new Error('Auth failed');
+  const headers = await getHeaders();
+  const res = await fetch(`${url}/auth/login`, { method: 'POST', headers });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Auth failed ${res.status}: ${body.slice(0, 200)} [token=${headers['Authorization'] ? 'present' : 'missing'}]`);
+  }
   return res.json();
 }
 
