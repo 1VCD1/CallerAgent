@@ -84,7 +84,7 @@ const callsPlugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // PATCH /users/:id — update user profile
-  fastify.patch<{ Params: { id: string } }>('/users/:id', { preHandler: requireApiKey }, async (request, reply) => {
+  fastify.patch<{ Params: { id: string } }>('/users/:id', { preHandler: requireAuth }, async (request, reply) => {
     const { id } = request.params;
     const body = updateUserSchema.parse(request.body);
 
