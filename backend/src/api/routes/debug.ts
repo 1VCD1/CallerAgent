@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { query, queryOne } from '../../db/client';
-import { runAllTests, startTestRun } from '../../services/test-runner';
+import { runAllTests, startTestRun, runAblation, runSimRealAgreement } from '../../services/test-runner';
 import OpenAI from 'openai';
 import { config } from '../../config';
 
@@ -403,6 +403,22 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
     return { status: 'started', runId };
   });
 
+  // Trigger an ablation — runs the suite twice (memory ON vs OFF) in the background.
+  // Compare the two arms via test_runs.triggered_by = 'ablation:memory_on' / 'ablation:memory_off'.
+  fastify.post('/debug/test/ablation', async () => {
+    runAblation().catch(err => console.error('[Ablation] Run failed:', err));
+    return { status: 'started', note: 'Runs the full suite twice (memory ON, then OFF). Check server logs / test_runs for results.' };
+  });
+
+  // Sim-real agreement — replays N recent real calls through the simulator and reports how
+  // often the simulated outcome lands in the same bucket as reality. Tells you how far to
+  // trust the simulator. Runs in background; agreement % and confusion are logged.
+  fastify.post('/debug/test/sim-real', async (request) => {
+    const limit = Math.min(Math.max(Number((request.body as any)?.limit) || 15, 1), 50);
+    runSimRealAgreement(limit).catch(err => console.error('[SimReal] Run failed:', err));
+    return { status: 'started', limit, note: `Replaying ${limit} real calls through the simulator. Check server logs for the agreement %.` };
+  });
+
   // Auto-generate a test scenario from a real call transcript
   fastify.post('/debug/test/generate-scenario', async (request) => {
     const { callId, transcript, company, goal, outcome, hasHuman } = request.body as any;
@@ -435,9 +451,11 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
     );
   });
 
-  // List past runs
+  // List past runs (excludes ablation arms — they'd distort the accuracy-over-deploys chart)
   fastify.get('/debug/test/runs', async () => {
-    return query<any>(`SELECT * FROM test_runs ORDER BY started_at DESC LIMIT 20`);
+    return query<any>(
+      `SELECT * FROM test_runs WHERE triggered_by NOT LIKE 'ablation:%' ORDER BY started_at DESC LIMIT 20`
+    );
   });
 
   // Results for a specific run
@@ -456,9 +474,12 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
     return { run, results };
   });
 
-  // Latest run summary (for dashboard polling)
+  // Latest run summary (for dashboard polling) — ignores ablation arms so the panel
+  // doesn't flip to the memory-OFF arm (which finishes last) and look like a regression.
   fastify.get('/debug/test/latest', async () => {
-    const run = await queryOne<any>(`SELECT * FROM test_runs ORDER BY started_at DESC LIMIT 1`);
+    const run = await queryOne<any>(
+      `SELECT * FROM test_runs WHERE triggered_by NOT LIKE 'ablation:%' ORDER BY started_at DESC LIMIT 1`
+    );
     if (!run) return null;
     const results = await query<any>(`
       SELECT tr.*, ts.name AS scenario_name, ts.company, ts.has_human, ts.tags

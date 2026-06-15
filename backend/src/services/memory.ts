@@ -5,6 +5,13 @@ import { config } from '../config';
 
 const openai = config.openai.apiKey ? new OpenAI({ apiKey: config.openai.apiKey }) : null;
 
+// ended_reasons that reflect the call's *environment*, not the AI's navigation quality.
+// A closed office, busy line, or dial failure says nothing about whether the path was good —
+// recording them would unfairly drag down the path's success_rate. So we skip them entirely.
+const NON_NAVIGATION_ENDED_REASONS = new Set([
+  'outside_hours', 'busy', 'no-answer', 'dial_failed', 'invalid_number', 'server_restart',
+]);
+
 async function generateEmbedding(company: string, goal: string): Promise<number[] | null> {
   if (!openai) return null;
   try {
@@ -107,8 +114,17 @@ export async function recordCallOutcome(params: {
   phoneNumber: string;
   goal: string;
   humanReached: boolean;
+  endedReason?: string | null;
   waitDurationSeconds?: number;
 }): Promise<void> {
+  // Environmental outcomes (closed office, busy line, dial failure) are not navigation
+  // failures — recording success_rate=0 against the path would punish good navigation for
+  // something it had no control over. Skip the update so the path's stats stay clean.
+  if (!params.humanReached && params.endedReason && NON_NAVIGATION_ENDED_REASONS.has(params.endedReason)) {
+    console.log(`[Memory:Skip] call=${params.callId.slice(0, 8)} reason=${params.endedReason} — environmental, leaving path success_rate untouched`);
+    return;
+  }
+
   const actions = await query<{ action: string; value: string; success: boolean }>(
     `SELECT action, value, success FROM action_history WHERE call_id = $1 ORDER BY timestamp ASC`,
     [params.callId]
