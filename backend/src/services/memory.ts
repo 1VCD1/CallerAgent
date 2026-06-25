@@ -5,6 +5,43 @@ import { config } from '../config';
 
 const openai = config.openai.apiKey ? new OpenAI({ apiKey: config.openai.apiKey }) : null;
 
+// Ranking score the agent uses to pick which historical paths to inject. Three factors:
+//   1. success — Laplace-smoothed (success + 1)/(total + 2), so a lucky 1/1 scores ~0.67
+//      instead of a misleading 1.0 and can't outrank a robust 18/20 path.
+//   2. wait penalty — divide by (1 + wait/120), prefer faster paths.
+//   3. recency decay — exp(-age / 90 days). IVR menus get rebuilt; a path verified 3 months
+//      ago is worth ~37% of a fresh one, ~13% at 6 months. last_verified_at drives this.
+// Kept as one shared SQL fragment so the formula lives in exactly one place
+// (referenced by memory.ts, analytics.ts, debug.ts).
+const RECENCY_DECAY_DAYS = 90;
+export const STRATEGY_SCORE_SQL =
+  `(((success_rate * sample_count + 1.0) / (sample_count + 2.0))`
+  + ` / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)`
+  + ` * EXP(-EXTRACT(EPOCH FROM (NOW() - COALESCE(last_verified_at, NOW()))) / (86400.0 * ${RECENCY_DECAY_DAYS}.0)))`;
+
+// ended_reasons we record as neither success nor failure — they say nothing about the AI's
+// navigation quality, so counting them would unfairly drag down a path/node's success_rate.
+// Two kinds:
+//   - environmental: closed office, busy line, dial failure — outside the AI's control.
+//   - callback_caller_id: navigation DID reach a callback offer, but the company would call
+//     back on our Twilio caller-id (never reaches the user). The path worked; only delivery
+//     failed — so stay neutral rather than punish the node. (callback_number_given = success.)
+const NON_NAVIGATION_ENDED_REASONS = new Set([
+  'outside_hours', 'busy', 'no-answer', 'dial_failed', 'invalid_number', 'server_restart',
+  'callback_caller_id',
+]);
+
+// Single source of truth for "did navigation succeed?" — used by both learning layers
+// AND the live agent so L1 (whole paths) and L2 (per-node) never disagree.
+//   - human_reached: the goal, reached a live person.
+//   - callback_number_given: AI proactively gave the user's callback number → company will
+//     reach the user. Reliable, counts as success.
+// NOT success: callback_caller_id (company would call back on our Twilio caller-id, which
+// never reaches the user) and callback_offered (transient/unrefined — refined at call end).
+export function isNavigationSuccess(humanReached: boolean, endedReason: string | null | undefined): boolean {
+  return humanReached || endedReason === 'callback_number_given';
+}
+
 async function generateEmbedding(company: string, goal: string): Promise<number[] | null> {
   if (!openai) return null;
   try {
@@ -30,7 +67,7 @@ export async function getMemoryPatterns(company: string, goal: string, phoneNumb
   if (phoneNumber) {
     const byPhone = await query<Row>(
       `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
-              (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
+              ${STRATEGY_SCORE_SQL} AS strategy_score
        FROM memory_patterns
        WHERE phone_number = $1 AND LOWER(goal) = LOWER($2)
        ORDER BY strategy_score DESC, sample_count DESC
@@ -43,7 +80,7 @@ export async function getMemoryPatterns(company: string, goal: string, phoneNumb
     const usedIds = byPhone.map(r => r.id);
     const byCompany = await query<Row>(
       `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
-              (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
+              ${STRATEGY_SCORE_SQL} AS strategy_score
        FROM memory_patterns
        WHERE LOWER(company) = LOWER($1) AND LOWER(goal) = LOWER($2)
          AND id != ALL($3::uuid[])
@@ -64,7 +101,7 @@ export async function getMemoryPatterns(company: string, goal: string, phoneNumb
     const semantic = await query<Row & { distance: number }>(
       `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
               (strategy_embedding <=> $1::vector) AS distance,
-              (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
+              ${STRATEGY_SCORE_SQL} AS strategy_score
        FROM memory_patterns
        WHERE strategy_embedding IS NOT NULL AND id != ALL($2::uuid[])
        ORDER BY distance ASC, strategy_score DESC LIMIT $3`,
@@ -77,7 +114,7 @@ export async function getMemoryPatterns(company: string, goal: string, phoneNumb
   // No phone number: company match + semantic search
   const exact = await query<Row>(
     `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
-            (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
+            ${STRATEGY_SCORE_SQL} AS strategy_score
      FROM memory_patterns
      WHERE LOWER(company) = LOWER($1) AND LOWER(goal) = LOWER($2)
      ORDER BY strategy_score DESC, sample_count DESC
@@ -91,7 +128,7 @@ export async function getMemoryPatterns(company: string, goal: string, phoneNumb
   const semantic = await query<Row & { distance: number }>(
     `SELECT id, company, goal, path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
             (strategy_embedding <=> $1::vector) AS distance,
-            (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
+            ${STRATEGY_SCORE_SQL} AS strategy_score
      FROM memory_patterns
      WHERE strategy_embedding IS NOT NULL AND id != ALL($2::uuid[])
      ORDER BY distance ASC, strategy_score DESC LIMIT $3`,
@@ -107,8 +144,17 @@ export async function recordCallOutcome(params: {
   phoneNumber: string;
   goal: string;
   humanReached: boolean;
+  endedReason?: string | null;
   waitDurationSeconds?: number;
 }): Promise<void> {
+  // Environmental outcomes (closed office, busy line, dial failure) are not navigation
+  // failures — recording success_rate=0 against the path would punish good navigation for
+  // something it had no control over. Skip the update so the path's stats stay clean.
+  if (!params.humanReached && params.endedReason && NON_NAVIGATION_ENDED_REASONS.has(params.endedReason)) {
+    console.log(`[Memory:Skip] call=${params.callId.slice(0, 8)} reason=${params.endedReason} — neutral outcome, leaving path success_rate untouched`);
+    return;
+  }
+
   const actions = await query<{ action: string; value: string; success: boolean }>(
     `SELECT action, value, success FROM action_history WHERE call_id = $1 ORDER BY timestamp ASC`,
     [params.callId]
@@ -118,6 +164,8 @@ export async function recordCallOutcome(params: {
 
   const path = actions.filter((a) => a.success).map((a) => formatPathStep(a.action, a.value));
   if (path.length === 0) return;
+
+  const succeeded = isNavigationSuccess(params.humanReached, params.endedReason);
 
   const pathKey = JSON.stringify(path);
   // Look up by phone_number (most specific key) — fall back to company for old records
@@ -132,7 +180,7 @@ export async function recordCallOutcome(params: {
 
   if (existing) {
     const newCount = existing.sample_count + 1;
-    const successDelta = params.humanReached ? 1 : 0;
+    const successDelta = succeeded ? 1 : 0;
     const newSuccessRate = (existing.success_rate * existing.sample_count + successDelta) / newCount;
 
     await query(
@@ -140,13 +188,13 @@ export async function recordCallOutcome(params: {
        SET success_rate = $1,
            sample_count = $2,
            avg_wait_seconds = CASE WHEN $3::INTEGER IS NOT NULL
-             THEN (COALESCE(avg_wait_seconds, 0) + $3::INTEGER) / 2
+             THEN (COALESCE(avg_wait_seconds, $3::INTEGER) * $6 + $3::INTEGER) / $2
              ELSE avg_wait_seconds END,
            strategy_embedding = COALESCE($5::vector, strategy_embedding),
            last_verified_at = NOW(),
            updated_at = NOW()
        WHERE id = $4`,
-      [newSuccessRate, newCount, params.waitDurationSeconds ?? null, existing.id, embeddingLiteral]
+      [newSuccessRate, newCount, params.waitDurationSeconds ?? null, existing.id, embeddingLiteral, existing.sample_count]
     );
   } else {
     await query(
@@ -157,7 +205,7 @@ export async function recordCallOutcome(params: {
         params.company,
         params.goal,
         pathKey,
-        params.humanReached ? 1.0 : 0.0,
+        succeeded ? 1.0 : 0.0,
         params.waitDurationSeconds ?? null,
         embeddingLiteral,
       ]
@@ -172,6 +220,8 @@ export interface IvrDecisionNode {
   callsSuccess: number;
   callsTotal: number;
   successPct: number;
+  recent7Success: number; // successes within the last 7 days (rolling window)
+  recent7Total: number;   // total calls within the last 7 days
 }
 
 function normalizeIvr(text: string): string {
@@ -222,15 +272,23 @@ export async function recordIvrDecisionNodes(params: {
   humanReached: boolean;
   endedReason: string | null;
 }): Promise<void> {
+  // Environmental outcomes (closed office, busy, dial failure) say nothing about whether the
+  // node's action was right. Recording them as node failures is what wrongly sends good nodes
+  // to AVOID after a few unlucky after-hours calls — so skip, same guard as recordCallOutcome.
+  if (!params.humanReached && params.endedReason && NON_NAVIGATION_ENDED_REASONS.has(params.endedReason)) {
+    console.log(`[Memory:Skip:L2] call=${params.callId.slice(0, 8)} reason=${params.endedReason} — neutral outcome, not punishing nodes`);
+    return;
+  }
+
   const decisions = await query<{ data: Record<string, any> }>(
     `SELECT data FROM call_debug_logs WHERE call_id = $1 AND event_type = 'llm_decision' ORDER BY timestamp`,
     [params.callId]
   );
   if (decisions.length === 0) return;
 
-  const success = params.humanReached ||
-    ['callback_number_given', 'callback_offered'].includes(params.endedReason ?? '');
-  const successDelta = success ? 1 : 0;
+  const successDelta = isNavigationSuccess(params.humanReached, params.endedReason) ? 1 : 0;
+  // One rolling-log entry per node this call, so we can later compute a recent-window rate.
+  const outcomeEntry = JSON.stringify([{ t: new Date().toISOString(), s: successDelta }]);
 
   // Fetch existing nodes keyed by phone_number for similarity matching
   const existingNodes = await query<{ ivr_text: string; ai_action: string; ai_value: string }>(
@@ -261,14 +319,20 @@ export async function recordIvrDecisionNodes(params: {
 
     await query(
       `INSERT INTO ivr_decision_nodes
-         (phone_number, company, ivr_text, ai_action, ai_value, calls_success, calls_total)
-       VALUES ($1, $2, $3, $4, $5, $6, 1)
+         (phone_number, company, ivr_text, ai_action, ai_value, calls_success, calls_total, recent_outcomes)
+       VALUES ($1, $2, $3, $4, $5, $6, 1, $7::jsonb)
        ON CONFLICT (phone_number, ivr_text, ai_action, ai_value)
        DO UPDATE SET
          calls_success = ivr_decision_nodes.calls_success + $6,
          calls_total   = ivr_decision_nodes.calls_total   + 1,
-         last_seen_at  = NOW()`,
-      [params.phoneNumber, params.company, ivrKey, data.action, aiValue, successDelta]
+         last_seen_at  = NOW(),
+         -- append this outcome, dropping the oldest once we hit 20 entries (bounded log)
+         recent_outcomes = (
+           CASE WHEN jsonb_array_length(ivr_decision_nodes.recent_outcomes) >= 20
+                THEN ivr_decision_nodes.recent_outcomes - 0
+                ELSE ivr_decision_nodes.recent_outcomes END
+         ) || $7::jsonb`,
+      [params.phoneNumber, params.company, ivrKey, data.action, aiValue, successDelta, outcomeEntry]
     );
   }
 }
@@ -277,9 +341,16 @@ export async function getIvrDecisionTree(phoneNumber: string): Promise<IvrDecisi
   const rows = await query<{
     ivr_text: string; ai_action: string; ai_value: string;
     calls_success: string; calls_total: string; success_pct: string;
+    recent7_success: string; recent7_total: string;
   }>(
     `SELECT ivr_text, ai_action, ai_value, calls_success, calls_total,
-            ROUND(calls_success::numeric / calls_total * 100) AS success_pct
+            ROUND(calls_success::numeric / calls_total * 100) AS success_pct,
+            COALESCE((SELECT COUNT(*) FILTER (WHERE (e->>'s')::int = 1)
+                      FROM jsonb_array_elements(recent_outcomes) e
+                      WHERE (e->>'t')::timestamptz > NOW() - INTERVAL '7 days'), 0) AS recent7_success,
+            COALESCE((SELECT COUNT(*)
+                      FROM jsonb_array_elements(recent_outcomes) e
+                      WHERE (e->>'t')::timestamptz > NOW() - INTERVAL '7 days'), 0) AS recent7_total
      FROM ivr_decision_nodes
      WHERE phone_number = $1 AND calls_total >= 1
      ORDER BY calls_total DESC, ivr_text, success_pct DESC
@@ -294,6 +365,8 @@ export async function getIvrDecisionTree(phoneNumber: string): Promise<IvrDecisi
     callsSuccess: parseInt(r.calls_success, 10),
     callsTotal:   parseInt(r.calls_total,   10),
     successPct:   parseInt(r.success_pct,   10),
+    recent7Success: parseInt(r.recent7_success, 10),
+    recent7Total:   parseInt(r.recent7_total,   10),
   }));
 }
 
@@ -316,6 +389,7 @@ function toMemoryPattern(r: any): MemoryPattern {
     goal: r.goal,
     path: r.path,
     successRate: r.success_rate,
+    sampleCount: parseInt(r.sample_count ?? '0', 10),
     avgWaitSeconds: r.avg_wait_seconds,
     strategyScore: parseFloat(r.strategy_score ?? '0'),
     lastVerifiedAt: r.last_verified_at,

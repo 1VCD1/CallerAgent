@@ -99,6 +99,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
           phoneNumber: callRow[0].phone_number,
           goal: callRow[0].goal,
           humanReached: callRow[0].human_reached,
+          endedReason,
           waitDurationSeconds: callRow[0].wait_duration_seconds ?? undefined,
         };
         console.log(`[Memory:Write] call=${callId.slice(0,8)} phone=${callRow[0].phone_number} human=${callRow[0].human_reached} reason=${endedReason}`);

@@ -150,7 +150,11 @@ DTMF rule: When the caller's action is [DTMF: pressed key ...], you ALWAYS recei
   return text;
 }
 
-async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
+async function runScenario(
+  scenario: TestScenario,
+  memoryEnabled = true,
+  humanAvailableOverride?: boolean,
+): Promise<ScenarioResult> {
   const transcript: TurnRecord[] = [];
   let turnNum = 0;
   let actualOutcome = 'max_attempts';
@@ -171,15 +175,22 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
 
   try {
     const fewShotExamples = await buildFewShotExamples(scenario.referenceCallIds ?? []);
-    // For has_human scenarios, randomly decide if a human will appear this run
-    const hasHumanThisRun = scenario.hasHuman ? Math.random() < 0.5 : false;
+    // For has_human scenarios, randomly decide if a human will appear this run — unless the
+    // caller pins it (sim-real check pins it to what the real call actually did, so the random
+    // coin flip doesn't get blamed on simulator infidelity).
+    const hasHumanThisRun = humanAvailableOverride !== undefined
+      ? humanAvailableOverride
+      : (scenario.hasHuman ? Math.random() < 0.5 : false);
     const persona = buildPersona(scenario.company, scenario.goal, scenario.ivrPersona, hasHumanThisRun);
 
-    // Load memory once before the loop — not per turn (avoids repeated embedding API calls)
-    const [historicalMemory, ivrDecisionTree] = await Promise.all([
-      getMemoryPatterns(scenario.company, scenario.goal, scenario.phoneNumber),
-      scenario.phoneNumber ? getIvrDecisionTree(scenario.phoneNumber) : Promise.resolve([]),
-    ]);
+    // Load memory once before the loop — not per turn (avoids repeated embedding API calls).
+    // Ablation OFF arm: inject no learned memory so we can measure its marginal effect.
+    const [historicalMemory, ivrDecisionTree] = memoryEnabled
+      ? await Promise.all([
+          getMemoryPatterns(scenario.company, scenario.goal, scenario.phoneNumber),
+          scenario.phoneNumber ? getIvrDecisionTree(scenario.phoneNumber) : Promise.resolve([]),
+        ])
+      : [[], []];
 
     // Initial IVR greeting
     const greeting = await simulateIvr(persona, [], null, fewShotExamples, hasHumanThisRun);
@@ -344,17 +355,24 @@ async function runScenario(scenario: TestScenario): Promise<ScenarioResult> {
     };
   }
 
-  const uncontrollableOutcomes = ['outside_hours', 'wrong_number', 'voicemail', 'invalid_number', 'callback_offered', 'agents_unavailable', 'call_ended_by_ivr', 'user_cancelled'];
+  // Securing a callback IS successful navigation — the eval grades navigation ability, and
+  // the AI got the company to agree to call back. Counts as a pass (only reached in the
+  // no-human branch; if a human was actually available, accepting a callback is still a miss).
+  const navigationSuccessOutcomes = ['callback_offered'];
+  const uncontrollableOutcomes = ['outside_hours', 'wrong_number', 'voicemail', 'invalid_number', 'agents_unavailable', 'call_ended_by_ivr', 'user_cancelled'];
   // human appeared → did AI detect it? (pass/fail)
+  // no human + callback secured → pass (navigation succeeded)
   // no human + uncontrollable → neutral (null), excluded from pass rate
   // no human + max_attempts or false positive → fail
   const passed: boolean | null = humanAppearedInIvr
     ? humanDetected
     : falsePositive
       ? false
-      : uncontrollableOutcomes.includes(actualOutcome)
-        ? null
-        : false;
+      : navigationSuccessOutcomes.includes(actualOutcome)
+        ? true
+        : uncontrollableOutcomes.includes(actualOutcome)
+          ? null
+          : false;
 
   return {
     scenarioId: scenario.id,
@@ -387,7 +405,11 @@ export async function startTestRun(triggeredBy = 'manual'): Promise<string> {
   return runRow!.id;
 }
 
-export async function runAllTests(triggeredBy = 'manual', existingRunId?: string): Promise<string> {
+export async function runAllTests(
+  triggeredBy = 'manual',
+  existingRunId?: string,
+  memoryEnabled = process.env.MEMORY_DISABLED !== '1',
+): Promise<string> {
   const scenarios = await query<{
     id: string; name: string; company: string; goal: string;
     ivr_persona: string; expected_outcome: string;
@@ -437,8 +459,8 @@ export async function runAllTests(triggeredBy = 'manual', existingRunId?: string
     };
 
     if (results.length > 0) await new Promise(r => setTimeout(r, 15000)); // 15s cooldown between scenarios to avoid TPM rate limit
-    console.log(`[TestRunner] Running: ${scenario.name}`);
-    const result = await runScenario(scenario);
+    console.log(`[TestRunner] Running: ${scenario.name}${memoryEnabled ? '' : ' [memory OFF]'}`);
+    const result = await runScenario(scenario, memoryEnabled);
     results.push(result);
 
     await query(
@@ -485,4 +507,137 @@ export async function runAllTests(triggeredBy = 'manual', existingRunId?: string
 
   console.log(`[TestRunner] Done: ${passed}/${results.length} — success rate: ${Math.round((successRate??0)*100)}%, detection rate: ${Math.round((humanDetectionRate??0)*100)}%, false positive: ${Math.round((falsePositiveRate??0)*100)}%`);
   return runId;
+}
+
+// Ablation: run the full suite twice — once WITH learned memory injected, once WITHOUT —
+// over the same scenarios, to measure whether memory injection actually improves outcomes.
+// The two arms are tagged via triggered_by so they can be compared in the dashboard / queries.
+// NOTE: this runs every scenario twice with a 15s cooldown each, so it is slow and costs ~2x
+// the OpenAI spend of a normal run. Trigger deliberately, not on every deploy.
+export async function runAblation(): Promise<{ memoryOn: string; memoryOff: string }> {
+  console.log('[Ablation] Arm 1/2 — memory ON');
+  const memoryOn = await runAllTests('ablation:memory_on', undefined, true);
+  console.log('[Ablation] Arm 2/2 — memory OFF');
+  const memoryOff = await runAllTests('ablation:memory_off', undefined, false);
+
+  const summarize = (runId: string) => queryOne<{
+    accuracy: number | null; human_detection_rate: number | null;
+    false_positive_rate: number | null; avg_turns: number | null;
+  }>(
+    `SELECT accuracy, human_detection_rate, false_positive_rate, avg_turns
+     FROM test_runs WHERE id = $1`,
+    [runId]
+  );
+
+  const on = await summarize(memoryOn);
+  const off = await summarize(memoryOff);
+  const pct = (v: number | null | undefined) => (v == null ? 'n/a' : `${Math.round(v * 100)}%`);
+  console.log('[Ablation] ===== RESULTS (memory ON vs OFF) =====');
+  console.log(`[Ablation] success rate     ON ${pct(on?.accuracy)}  vs  OFF ${pct(off?.accuracy)}`);
+  console.log(`[Ablation] human detection  ON ${pct(on?.human_detection_rate)}  vs  OFF ${pct(off?.human_detection_rate)}`);
+  console.log(`[Ablation] false positive   ON ${pct(on?.false_positive_rate)}  vs  OFF ${pct(off?.false_positive_rate)}`);
+  console.log(`[Ablation] avg turns        ON ${on?.avg_turns?.toFixed(1) ?? 'n/a'}  vs  OFF ${off?.avg_turns?.toFixed(1) ?? 'n/a'}`);
+  return { memoryOn, memoryOff };
+}
+
+// ── Sim-real agreement ───────────────────────────────────────────────────────
+// Measures how close the GPT-4o IVR simulator is to reality, by replaying real calls
+// (whose true outcome we know) through the simulator and checking whether the simulated
+// outcome lands in the same coarse bucket as what actually happened.
+//
+// IMPORTANT — what this number does and does NOT mean:
+//   • It measures the GROUNDED simulator (the real transcript is fed as a few-shot example,
+//     exactly how production scenarios are built). High agreement is NECESSARY-but-NOT-
+//     SUFFICIENT: if even the grounded sim can't reproduce reality, the sim is untrustworthy.
+//   • Disagreement conflates three things: simulator infidelity, agent (gpt-4o-mini)
+//     stochasticity on re-navigation, and the coarseness of the buckets. We pin human
+//     availability to reality to remove one confound, but the others remain.
+//   • There is no audio in the sim, so human-detection realism is out of scope here.
+type OutcomeBucket = 'REACHED_HUMAN' | 'CALLBACK' | 'ENVIRONMENTAL' | 'NO_HUMAN_TERMINAL';
+
+function bucketOutcome(humanReached: boolean, endedReason: string | null): OutcomeBucket {
+  if (humanReached) return 'REACHED_HUMAN';
+  const r = (endedReason ?? '').toLowerCase();
+  if (r.startsWith('callback')) return 'CALLBACK';
+  if (['outside_hours', 'busy', 'no-answer', 'dial_failed', 'invalid_number',
+       'wrong_number', 'server_restart', 'voicemail', 'voicemail_left'].includes(r)) {
+    return 'ENVIRONMENTAL';
+  }
+  return 'NO_HUMAN_TERMINAL'; // no_human_path, max_attempts, agents_unavailable, completed, etc.
+}
+
+export interface SimRealAgreement {
+  agreementRate: number | null;
+  agree: number;
+  total: number;
+  confusion: Record<string, number>; // "REAL_BUCKET → SIM_BUCKET" : count, disagreements only
+  detail: {
+    callId: string; company: string;
+    realBucket: OutcomeBucket; simBucket: OutcomeBucket;
+    realOutcome: string; simOutcome: string; match: boolean; turns: number;
+  }[];
+}
+
+export async function runSimRealAgreement(limit = 15): Promise<SimRealAgreement> {
+  const calls = await query<{
+    id: string; company: string; phone_number: string; goal: string;
+    ended_reason: string | null; human_reached: boolean;
+  }>(
+    `SELECT id, company, phone_number, goal, ended_reason, human_reached
+     FROM calls
+     WHERE status = 'ENDED'
+       AND (human_reached = true OR ended_reason IS NOT NULL)
+       AND EXISTS (SELECT 1 FROM transcripts t WHERE t.call_id = calls.id)
+     ORDER BY started_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+
+  const detail: SimRealAgreement['detail'] = [];
+  let agree = 0;
+
+  for (const call of calls) {
+    const realBucket = bucketOutcome(call.human_reached, call.ended_reason);
+    const scenario: TestScenario = {
+      id: call.id,
+      name: `real:${call.company}:${call.id.slice(0, 8)}`,
+      company: call.company,
+      goal: call.goal,
+      ivrPersona: `${call.company}'s phone system, as observed in a real call.`,
+      expectedOutcome: call.human_reached ? 'human_reached' : (call.ended_reason ?? 'unknown'),
+      hasHuman: call.human_reached,
+      maxTurns: 14,
+      tags: ['sim_real_check'],
+      phoneNumber: call.phone_number,
+      referenceCallIds: [call.id], // ground the simulator on this real call's transcript
+    };
+
+    if (detail.length > 0) await new Promise(r => setTimeout(r, 15000)); // TPM cooldown
+    // Pin human availability to what really happened so the random coin flip isn't blamed on the sim.
+    const result = await runScenario(scenario, true, call.human_reached);
+    const simBucket = bucketOutcome(result.humanDetected, result.actualOutcome);
+    const match = simBucket === realBucket;
+    if (match) agree++;
+
+    detail.push({
+      callId: call.id, company: call.company,
+      realBucket, simBucket,
+      realOutcome: scenario.expectedOutcome, simOutcome: result.actualOutcome,
+      match, turns: result.turns,
+    });
+    console.log(`[SimReal] ${match ? '✓' : '✗'} ${call.company.slice(0, 20).padEnd(20)} real=${realBucket} sim=${simBucket}`);
+  }
+
+  const agreementRate = detail.length ? agree / detail.length : null;
+  const confusion: Record<string, number> = {};
+  for (const d of detail) {
+    if (d.match) continue;
+    const key = `${d.realBucket} → ${d.simBucket}`;
+    confusion[key] = (confusion[key] ?? 0) + 1;
+  }
+
+  console.log(`[SimReal] ===== AGREEMENT: ${agree}/${detail.length} = ${Math.round((agreementRate ?? 0) * 100)}% =====`);
+  for (const [k, v] of Object.entries(confusion)) console.log(`[SimReal] disagree  ${k}: ${v}`);
+
+  return { agreementRate, agree, total: detail.length, confusion, detail };
 }

@@ -477,8 +477,8 @@ export class CallOrchestrator {
     this.transcriptionSession.stop();
     emitCallStatus(this.call.id, 'ENDED');
 
-    const callRow = await queryOne<{ wait_duration_seconds: number }>(
-      `SELECT wait_duration_seconds FROM calls WHERE id = $1`,
+    const callRow = await queryOne<{ wait_duration_seconds: number; ended_reason: string | null }>(
+      `SELECT wait_duration_seconds, ended_reason FROM calls WHERE id = $1`,
       [this.call.id]
     );
 
@@ -488,6 +488,7 @@ export class CallOrchestrator {
       phoneNumber: this.call.phoneNumber,
       goal: this.call.goal,
       humanReached: this.call.humanReached,
+      endedReason: callRow?.ended_reason,
       waitDurationSeconds: callRow?.wait_duration_seconds,
     });
 
