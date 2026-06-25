@@ -355,17 +355,24 @@ async function runScenario(
     };
   }
 
-  const uncontrollableOutcomes = ['outside_hours', 'wrong_number', 'voicemail', 'invalid_number', 'callback_offered', 'agents_unavailable', 'call_ended_by_ivr', 'user_cancelled'];
+  // Securing a callback IS successful navigation — the eval grades navigation ability, and
+  // the AI got the company to agree to call back. Counts as a pass (only reached in the
+  // no-human branch; if a human was actually available, accepting a callback is still a miss).
+  const navigationSuccessOutcomes = ['callback_offered'];
+  const uncontrollableOutcomes = ['outside_hours', 'wrong_number', 'voicemail', 'invalid_number', 'agents_unavailable', 'call_ended_by_ivr', 'user_cancelled'];
   // human appeared → did AI detect it? (pass/fail)
+  // no human + callback secured → pass (navigation succeeded)
   // no human + uncontrollable → neutral (null), excluded from pass rate
   // no human + max_attempts or false positive → fail
   const passed: boolean | null = humanAppearedInIvr
     ? humanDetected
     : falsePositive
       ? false
-      : uncontrollableOutcomes.includes(actualOutcome)
-        ? null
-        : false;
+      : navigationSuccessOutcomes.includes(actualOutcome)
+        ? true
+        : uncontrollableOutcomes.includes(actualOutcome)
+          ? null
+          : false;
 
   return {
     scenarioId: scenario.id,

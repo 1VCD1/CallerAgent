@@ -1367,6 +1367,7 @@ function renderMemoryDetail(phoneNumber, { patterns, nodes, ivrNote, userNotes, 
           <div class="flex items-center gap-3 mb-2">
             <span class="${srColor} font-bold text-lg">${sr}%</span>
             <span class="text-slate-500 text-xs">${p.sample_count} calls</span>
+            ${p.strategy_score != null ? `<span class="text-sky-400 text-xs" title="success_rate / (1 + wait/120) — the score the agent actually ranks by">score ${Number(p.strategy_score).toFixed(2)}</span>` : ''}
             ${p.avg_wait_seconds ? `<span class="text-slate-600 text-xs">avg wait ${fmtSecs(p.avg_wait_seconds)}</span>` : ''}
             <span class="text-slate-600 text-xs ml-auto">verified ${relTime(p.last_verified_at)}</span>
           </div>
@@ -1384,7 +1385,8 @@ function renderMemoryDetail(phoneNumber, { patterns, nodes, ivrNote, userNotes, 
         <th class="text-left pb-2 pr-3">IVR Text</th>
         <th class="text-left pb-2 pr-3">Action</th>
         <th class="text-right pb-2 pr-3">Calls</th>
-        <th class="text-right pb-2">Success</th>
+        <th class="text-right pb-2 pr-3">Success</th>
+        <th class="text-right pb-2">7d / Status</th>
       </tr></thead>
       <tbody>
         ${nodes.map(n => {
@@ -1394,11 +1396,22 @@ function renderMemoryDetail(phoneNumber, { patterns, nodes, ivrNote, userNotes, 
                             : n.ai_action === 'say_phrase' ? `say "${n.ai_value}"`
                             : n.ai_action === 'wait' ? `wait ${n.ai_value}s`
                             : n.ai_action;
+          // Mirror the agent's AVOID logic (Laplace-smoothed, sans the 2% random re-test)
+          // so the dashboard explains why a low node may still be retried after an IVR change.
+          const smooth = (s, t) => (s + 1) / (t + 2);
+          const r7t = parseInt(n.recent7_total ?? 0), r7s = parseInt(n.recent7_success ?? 0);
+          const allTimeAvoid = n.calls_total >= 3 && smooth(parseInt(n.calls_success ?? 0), n.calls_total) < 0.3;
+          const recovered = r7t >= 2 && smooth(r7s, r7t) >= 0.5;
+          const recent = r7t > 0 ? `<span class="text-slate-500">${r7s}/${r7t}</span>` : '<span class="text-slate-700">—</span>';
+          const status = allTimeAvoid && recovered ? ' <span class="text-sky-400" title="recent 7-day window recovered — agent may retry">↻ recovered</span>'
+                       : allTimeAvoid              ? ' <span class="text-red-400" title="all-time <30% over ≥3 calls — agent avoids">AVOID</span>'
+                       : '';
           return `<tr class="border-b border-slate-700/30">
             <td class="py-1.5 pr-3 text-slate-300 max-w-xs truncate" title="${n.ivr_text.replace(/"/g,'&quot;')}">${n.ivr_text}</td>
             <td class="py-1.5 pr-3"><span class="badge text-white" style="background:${actionColor(n.ai_action)}">${actionLabel}</span></td>
             <td class="py-1.5 pr-3 text-right text-slate-400">${n.calls_total}</td>
-            <td class="py-1.5 text-right font-semibold ${sc}">${n.success_pct ?? '—'}%</td>
+            <td class="py-1.5 pr-3 text-right font-semibold ${sc}">${n.success_pct ?? '—'}%</td>
+            <td class="py-1.5 text-right text-xs">${recent}${status}</td>
           </tr>`;
         }).join('')}
       </tbody>

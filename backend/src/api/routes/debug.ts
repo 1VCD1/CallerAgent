@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { query, queryOne } from '../../db/client';
 import { runAllTests, startTestRun, runAblation, runSimRealAgreement } from '../../services/test-runner';
+import { STRATEGY_SCORE_SQL } from '../../services/memory';
 import OpenAI from 'openai';
 import { config } from '../../config';
 
@@ -44,9 +45,10 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
           COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED','BRIDGED')
             AND COALESCE(ended_reason,'') NOT IN
               ('server_restart','dial_failed','busy','no-answer'))                     AS navigated,
-          -- Stage 4: human reached OR callback with number given (both count as success)
+          -- Stage 4: success = human reached OR callback_number_given (we gave a reachable
+          -- number). callback_offered (unrefined) and callback_caller_id do NOT count.
           COUNT(*) FILTER (WHERE human_reached
-            OR ended_reason IN ('callback_number_given','callback_offered'))           AS human_reached,
+            OR ended_reason = 'callback_number_given')           AS human_reached,
           -- AI performance denominator: navigated calls where success was theoretically possible
           -- excludes impossible outcomes AND user_cancelled (user chose to stop, not AI failure)
           COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED','BRIDGED')
@@ -113,9 +115,9 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
           company,
           COUNT(*)                                            AS total,
           COUNT(*) FILTER (WHERE human_reached
-            OR ended_reason IN ('callback_number_given','callback_offered')) AS successful,
+            OR ended_reason = 'callback_number_given') AS successful,
           ROUND(COUNT(*) FILTER (WHERE human_reached
-            OR ended_reason IN ('callback_number_given','callback_offered'))::numeric /
+            OR ended_reason = 'callback_number_given')::numeric /
             NULLIF(COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED','BRIDGED')
               AND COALESCE(ended_reason,'') NOT IN ('server_restart','dial_failed')), 0) * 100) AS success_pct,
           ROUND(AVG(wait_duration_seconds) FILTER (WHERE human_reached)) AS avg_wait_secs
@@ -135,7 +137,7 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
         DATE_TRUNC('week', started_at)::date                                            AS week,
         COUNT(*)                                                                         AS total,
         COUNT(*) FILTER (WHERE human_reached
-          OR ended_reason IN ('callback_number_given','callback_offered'))               AS successful,
+          OR ended_reason = 'callback_number_given')               AS successful,
         COUNT(*) FILTER (WHERE status IN ('ENDED','FAILED','BRIDGED')
           AND COALESCE(ended_reason,'') NOT IN
             ('server_restart','dial_failed','busy','no-answer',
@@ -256,14 +258,21 @@ const debugPlugin: FastifyPluginAsync = async (fastify) => {
     const { phoneNumber } = request.params as { phoneNumber: string };
     const [patterns, nodes, ivrNote, userNotes, companyName] = await Promise.all([
       query<any>(`
-        SELECT path, success_rate, sample_count, avg_wait_seconds, last_verified_at
+        SELECT path, success_rate, sample_count, avg_wait_seconds, last_verified_at,
+               ${STRATEGY_SCORE_SQL} AS strategy_score
         FROM memory_patterns WHERE phone_number = $1
-        ORDER BY success_rate DESC, sample_count DESC
+        ORDER BY strategy_score DESC, sample_count DESC
       `, [phoneNumber]),
       query<any>(`
         SELECT ivr_text, ai_action, ai_value, calls_success, calls_total,
                ROUND(calls_success::numeric / NULLIF(calls_total, 0) * 100) AS success_pct,
-               last_seen_at
+               last_seen_at,
+               COALESCE((SELECT COUNT(*) FILTER (WHERE (e->>'s')::int = 1)
+                         FROM jsonb_array_elements(recent_outcomes) e
+                         WHERE (e->>'t')::timestamptz > NOW() - INTERVAL '7 days'), 0) AS recent7_success,
+               COALESCE((SELECT COUNT(*)
+                         FROM jsonb_array_elements(recent_outcomes) e
+                         WHERE (e->>'t')::timestamptz > NOW() - INTERVAL '7 days'), 0) AS recent7_total
         FROM ivr_decision_nodes WHERE phone_number = $1
         ORDER BY calls_total DESC LIMIT 60
       `, [phoneNumber]),

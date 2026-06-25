@@ -200,3 +200,7 @@ CREATE INDEX IF NOT EXISTS idx_memory_patterns_phone ON memory_patterns(phone_nu
 ALTER TABLE ivr_decision_nodes ADD COLUMN IF NOT EXISTS phone_number TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_ivr_nodes_phone_unique
   ON ivr_decision_nodes(phone_number, ivr_text, ai_action, ai_value);
+
+-- Rolling per-node outcome log (capped array of {t,s}) for recent-window success rate.
+-- Used to recover AVOID nodes when an IVR menu changes. See migrate10.ts.
+ALTER TABLE ivr_decision_nodes ADD COLUMN IF NOT EXISTS recent_outcomes JSONB NOT NULL DEFAULT '[]'::jsonb;

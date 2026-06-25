@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { query } from '../../db/client';
+import { STRATEGY_SCORE_SQL } from '../../services/memory';
 
 const analyticsPlugin: FastifyPluginAsync = async (fastify) => {
 
@@ -82,7 +83,7 @@ const analyticsPlugin: FastifyPluginAsync = async (fastify) => {
       strategy_score: number;
     }>(
       `SELECT company, goal, path, success_rate, sample_count, avg_wait_seconds,
-              (success_rate / (1.0 + COALESCE(avg_wait_seconds, 300) / 120.0)) AS strategy_score
+              ${STRATEGY_SCORE_SQL} AS strategy_score
        FROM memory_patterns
        ORDER BY strategy_score DESC, sample_count DESC
        LIMIT 20`

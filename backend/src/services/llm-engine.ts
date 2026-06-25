@@ -46,7 +46,7 @@ export async function decideLLMAction(context: CallContext, dryRun = false): Pro
 function buildContextMessage(ctx: CallContext): string {
   const recentActions = ctx.previousActions.slice(-10).map(formatAction).join('\n');
   const topMemories = ctx.historicalMemory
-    .sort((a, b) => b.successRate - a.successRate)
+    .sort((a, b) => b.strategyScore - a.strategyScore)
     .slice(0, 3)
     .map(formatMemory)
     .join('\n');
@@ -171,8 +171,22 @@ These OVERRIDE the history. Conversational phrasing alone ("Of course", "How can
                          : n.action === 'wait'       ? `wait ${n.value}s`
                          : n.action;
             const icon   = n.successPct >= 60 ? '✅' : n.successPct >= 30 ? '⚠️' : '❌';
-            const avoid  = n.successPct < 30 && n.callsTotal >= 3 ? ' — AVOID' : '';
-            lines.push(`    → ${action}: ${icon} ${n.successPct}% (${n.callsSuccess}/${n.callsTotal} calls)${avoid}`);
+            // All-time stats say avoid this node. But two escape hatches keep us from
+            // permanently condemning a node whose IVR may have changed:
+            //   1. recovery — its recent-7-day window is healthy again (menu likely changed)
+            //   2. ε=2% — occasionally re-probe a dead node to detect silent recoveries
+            // Both rates are Laplace-smoothed (success+1)/(total+2) — same as L1 — so a small
+            // unlucky streak doesn't read as a hard 0%/100%. Hard sample gates still apply
+            // (≥3 before any AVOID, ≥2 before a recovery) so one or two calls can't flip a node.
+            const smooth       = (s: number, t: number) => (s + 1) / (t + 2);
+            const allTimeAvoid = n.callsTotal >= 3 && smooth(n.callsSuccess, n.callsTotal) < 0.3;
+            const recovered    = n.recent7Total >= 2 && smooth(n.recent7Success, n.recent7Total) >= 0.5;
+            const epsilonProbe = Math.random() < 0.02;
+            const tag = !allTimeAvoid           ? ''
+                      : recovered               ? ` — ↻ RECOVERED (${n.recent7Success}/${n.recent7Total} in last 7d — OK to retry)`
+                      : epsilonProbe            ? ' — 🧪 RE-TEST (worth one more try to see if the menu changed)'
+                      :                           ' — AVOID';
+            lines.push(`    → ${action}: ${icon} ${n.successPct}% (${n.callsSuccess}/${n.callsTotal} calls)${tag}`);
           }
         }
         return `\n📊 IVR DECISION TREE FOR ${ctx.company.toUpperCase()} (learned from past calls):\n${lines.join('\n')}`;
@@ -249,7 +263,7 @@ function formatMemory(m: MemoryPattern): string {
   const speedTag = m.avgWaitSeconds
     ? m.avgWaitSeconds <= 60 ? '⚡fast' : m.avgWaitSeconds <= 180 ? '🕐medium' : '🐢slow'
     : '';
-  return `[score:${m.strategyScore.toFixed(2)}] ${m.path.join(' → ')} | ${(m.successRate * 100).toFixed(0)}% success | ${waitStr} wait ${speedTag}`;
+  return `[score:${m.strategyScore.toFixed(2)}] ${m.path.join(' → ')} | ${(m.successRate * 100).toFixed(0)}% success (${m.sampleCount} call${m.sampleCount === 1 ? '' : 's'}) | ${waitStr} wait ${speedTag}`;
 }
 
 function parseAction(text: string): LLMAction {
