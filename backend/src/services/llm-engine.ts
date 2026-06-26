@@ -20,7 +20,9 @@ export async function decideLLMAction(context: CallContext, dryRun = false): Pro
       const llmStart = Date.now();
       const response = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
-        max_tokens: 320,
+        // The decision JSON is small; reasoning is capped to a few words in the prompt.
+        // 128 leaves headroom so the JSON never truncates (which would fail parse → wait).
+        max_tokens: 128,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: langConfig.systemPrompt },

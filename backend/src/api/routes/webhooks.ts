@@ -487,10 +487,14 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
           orchestrator.onHumanDetected(conferenceName).catch(console.error);
         }
 
-        // Put representative in a conference room with hold music while user is called
+        // Put representative in a conference room with hold music while user is called.
+        // Natural, first-person greeting + the user's name so the agent doesn't think it's a
+        // robocall and hang up. Escape the dynamic name for the inline TwiML.
+        const bridgeMsg = langConfig.humanBridgeMessage(context.userInfo?.name)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         reply.type('text/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="${langConfig.ttsVoice}">${langConfig.humanBridgeMessage}</Say>
+  <Say voice="${langConfig.ttsVoice}">${bridgeMsg}</Say>
   <Dial>
     <Conference beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" waitUrl="https://twimlets.com/holdmusic?Bucket=com.twilio.music.classical">${conferenceName}</Conference>
   </Dial>
