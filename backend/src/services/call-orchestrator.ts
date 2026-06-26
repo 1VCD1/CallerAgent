@@ -406,7 +406,7 @@ export class CallOrchestrator {
       conferenceName = `conf-${this.call.id}`;
       try {
         const langConfig = getLang(this.language);
-        await createConferenceWithHold(callSid, conferenceName, langConfig.humanBridgeMessage, langConfig.ttsVoice);
+        await createConferenceWithHold(callSid, conferenceName, langConfig.humanBridgeMessage(this.cachedUserRow?.name), langConfig.ttsVoice);
         await query(
           `UPDATE calls SET status = 'HUMAN_DETECTED', human_reached = true,
            wait_duration_seconds = EXTRACT(EPOCH FROM (NOW() - started_at))::INTEGER
@@ -421,10 +421,14 @@ export class CallOrchestrator {
       }
     }
 
-    // SMS + push notification fires first so user knows to answer the incoming call
-    if (this.onUserNotify) {
-      await this.onUserNotify(this.call.id);
-    }
+    // Fire SMS + push notification in parallel — do NOT block the user's incoming call on it.
+    // Every second between the agent picking up and the user's phone ringing is hold time the
+    // agent may abandon, so dialing the user is the priority; the heads-up notice can land
+    // alongside the ring.
+    const notifyPromise = this.onUserNotify
+      ? this.onUserNotify(this.call.id).catch(err =>
+          console.error(`[Orchestrator] User notify failed for call ${this.call.id}:`, err))
+      : Promise.resolve();
 
     await this.stateMachine.transition('user_notified');
     emitCallStatus(this.call.id, 'USER_NOTIFIED');
@@ -447,6 +451,8 @@ export class CallOrchestrator {
     } else {
       console.warn(`[Orchestrator] Human detected but no conference name or user phone — bridge skipped. conferenceName=${conferenceName} userPhone=${this.call.userPhoneNumber}`);
     }
+
+    await notifyPromise; // ensure the notification settles before we finish
   }
 
   async bridgeUser(userPhoneNumber: string): Promise<void> {
