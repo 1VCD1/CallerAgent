@@ -360,9 +360,29 @@ async function runScenario(
   // no-human branch; if a human was actually available, accepting a callback is still a miss).
   const navigationSuccessOutcomes = ['callback_offered'];
   const uncontrollableOutcomes = ['outside_hours', 'wrong_number', 'voicemail', 'invalid_number', 'agents_unavailable', 'call_ended_by_ivr', 'user_cancelled'];
+
+  // Self-inflicted dead-end detector: if the AI ended while hammering the SAME IVR response
+  // turn after turn (e.g. pressing 0 six times at "all agents unavailable", or never giving
+  // the info the IVR keeps asking for), the dead-end is the AI's failure to navigate — NOT an
+  // uncontrollable fact. Count consecutive identical IVR lines at the tail of the transcript.
+  const ivrLines = transcript.filter(t => t.role === 'IVR').map(t => t.text.trim().toLowerCase());
+  let tailRepeats = ivrLines.length > 0 ? 1 : 0;
+  for (let i = ivrLines.length - 1; i > 0 && ivrLines[i] === ivrLines[i - 1]; i--) tailRepeats++;
+  const stuckLoop = tailRepeats >= 3;
+
+  // Missed-callback detector: the IVR asked for a callback phone number (which the user DOES
+  // have), so securing it was achievable — but the AI bailed (e.g. misread "provide your
+  // number after the tone" as voicemail and ended). That's an AI failure, not a neutral
+  // voicemail outcome. Only fires when the AI did NOT actually secure the callback.
+  const recentIvrTail = ivrLines.slice(-2).join(' ');
+  const ivrAskedForCallbackNumber =
+    /requested a callback|call ?back number|provide your (phone )?number|your (phone )?number (after|so we can|to call)|what number .{0,25}(call|reach) you/i.test(recentIvrTail);
+  const missedCallback = ivrAskedForCallbackNumber && !navigationSuccessOutcomes.includes(actualOutcome);
+
   // human appeared → did AI detect it? (pass/fail)
   // no human + callback secured → pass (navigation succeeded)
-  // no human + uncontrollable → neutral (null), excluded from pass rate
+  // no human + stuck loop / missed an achievable callback → fail (AI caused the failure)
+  // no human + genuinely uncontrollable → neutral (null), excluded from pass rate
   // no human + max_attempts or false positive → fail
   const passed: boolean | null = humanAppearedInIvr
     ? humanDetected
@@ -370,9 +390,11 @@ async function runScenario(
       ? false
       : navigationSuccessOutcomes.includes(actualOutcome)
         ? true
-        : uncontrollableOutcomes.includes(actualOutcome)
-          ? null
-          : false;
+        : (stuckLoop || missedCallback)
+          ? false
+          : uncontrollableOutcomes.includes(actualOutcome)
+            ? null
+            : false;
 
   return {
     scenarioId: scenario.id,
