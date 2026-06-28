@@ -1,4 +1,5 @@
 import { AudioAnalysisResult } from './audio-analyzer';
+import { ActionRecord } from '../types';
 
 const HUMAN_INDICATORS = [
   // Name introductions — strongest human signal
@@ -238,4 +239,64 @@ export function isInvalidOrDisconnected(transcript: string): boolean {
 export function extractMenuKeys(transcript: string): string[] {
   const matches = [...transcript.matchAll(/press\s+([0-9*#])/gi)];
   return [...new Set(matches.map(m => m[1]))];
+}
+
+// True when the IVR is QUEUING the caller for a human (hold/queue messages). On hold the
+// correct action is to WAIT — pressing 0 or other keys drops you out of the queue and loops
+// you back, which is exactly how calls get stuck. Distinct from isHoldMusic (silence/no text).
+export function isOnHold(transcript: string): boolean {
+  const patterns = [
+    /please (continue to |stay on |remain on )?hold/i,
+    /(remain|stay) on the line/i,
+    /please hold while (we|i)/i,
+    /all (of )?(our |the )?(agents|representatives|operators|associates|advisors) are (currently )?(busy|unavailable|assisting)/i,
+    /(the )?next available (agent|representative|operator|associate|advisor)/i,
+    /your call (is|will be) (very )?important/i,
+    /thank you for (holding|your patience|waiting)/i,
+    /please wait while (we|i) (connect|transfer|find)/i,
+    /(experiencing|due to) (high|higher|heavy|unusually high).{0,25}(call|wait|volume)/i,
+    /you are (number|caller number|currently number)/i,
+    /estimated wait time/i,
+    /connect you to the next/i,
+  ];
+  return patterns.some(p => p.test(transcript));
+}
+
+// Shared streak detector so the live Gather webhook and the orchestrator's prefetch compute
+// the SAME loop/stuck signals — otherwise a prefetched decision misses the anti-loop nudges.
+// previousActions is in DESC (most-recent-first) order.
+export function computeActionStreaks(previousActions: ActionRecord[]): {
+  consecutiveWaits: number;
+  consecutiveSameKey?: { key: string; count: number };
+  consecutiveSamePhrase?: { phrase: string; count: number };
+} {
+  let consecutiveWaits = 0;
+  for (const a of previousActions) {
+    if (a.action === 'wait') consecutiveWaits++;
+    else break;
+  }
+
+  let consecutiveSameKey: { key: string; count: number } | undefined;
+  if (previousActions[0]?.action === 'press_key') {
+    const key = previousActions[0].value;
+    let count = 0;
+    for (const a of previousActions) {
+      if (a.action === 'press_key' && a.value === key) count++;
+      else break;
+    }
+    if (count >= 2) consecutiveSameKey = { key: key!, count };
+  }
+
+  let consecutiveSamePhrase: { phrase: string; count: number } | undefined;
+  if (previousActions[0]?.action === 'say_phrase') {
+    const phrase = previousActions[0].value;
+    let count = 0;
+    for (const a of previousActions) {
+      if (a.action === 'say_phrase' && a.value === phrase) count++;
+      else break;
+    }
+    if (count >= 2) consecutiveSamePhrase = { phrase: phrase!, count };
+  }
+
+  return { consecutiveWaits, consecutiveSameKey, consecutiveSamePhrase };
 }

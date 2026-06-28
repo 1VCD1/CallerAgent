@@ -8,7 +8,7 @@ import { decideLLMAction } from '../../services/llm-engine';
 import { config } from '../../config';
 import { CallContext, ActionRecord, CallStatus } from '../../types';
 import { getLang, buildVoicemailMessage } from '../../languages';
-import { isOutsideBusinessHours, isCallbackOffer, isVoicemailGreeting, isInvalidOrDisconnected, extractMenuKeys, isWrongNumber, extractSuggestedNumber } from '../../services/human-detector';
+import { isOutsideBusinessHours, isCallbackOffer, isVoicemailGreeting, isInvalidOrDisconnected, extractMenuKeys, isWrongNumber, extractSuggestedNumber, isOnHold, computeActionStreaks } from '../../services/human-detector';
 import { generateCallSummary, getCompanyIvrNotes } from '../../services/call-summarizer';
 import { emitCallStatus } from '../../services/call-events';
 import { logDebug } from '../../services/debug-logger';
@@ -326,36 +326,11 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
     const recentTranscriptText = transcripts.slice(-5).map(t => t.text).join(' ');
     const availableMenuKeys = extractMenuKeys(recentTranscriptText);
 
-    // Compute consecutive waits (previousActions is DESC order)
-    let consecutiveWaits = 0;
-    for (const a of previousActions) {
-      if (a.action === 'wait') consecutiveWaits++;
-      else break;
-    }
+    // Loop/stuck streaks (shared with the orchestrator's prefetch so both see the same signals)
+    const { consecutiveWaits, consecutiveSameKey, consecutiveSamePhrase } = computeActionStreaks(previousActions);
 
-    // Compute consecutive same DTMF key
-    let consecutiveSameKey: { key: string; count: number } | undefined;
-    if (previousActions.length > 0 && previousActions[0].action === 'press_key') {
-      const key = previousActions[0].value;
-      let count = 0;
-      for (const a of previousActions) {
-        if (a.action === 'press_key' && a.value === key) count++;
-        else break;
-      }
-      if (count >= 2) consecutiveSameKey = { key: key!, count };
-    }
-
-    // Compute consecutive same say_phrase
-    let consecutiveSamePhrase: { phrase: string; count: number } | undefined;
-    if (previousActions.length > 0 && previousActions[0].action === 'say_phrase') {
-      const phrase = previousActions[0].value;
-      let count = 0;
-      for (const a of previousActions) {
-        if (a.action === 'say_phrase' && a.value === phrase) count++;
-        else break;
-      }
-      if (count >= 2) consecutiveSamePhrase = { phrase: phrase!, count };
-    }
+    // Is the IVR queuing us for a human right now? On hold, waiting is correct — see buildContextMessage.
+    const onHold = !!spokenText && isOnHold(spokenText);
 
     // Short-circuit: if waited 3+ times with NO speech, skip LLM — return fresh Gather
     // Only when spokenText is empty — if IVR said something, always call LLM to respond
@@ -416,6 +391,7 @@ const webhooksPlugin: FastifyPluginAsync = async (fastify) => {
       companyIvrNotes: companyIvrNotes ?? undefined,
       userCompanyNote: userCompanyNote ?? undefined,
       currentIvrUtterance: spokenText || undefined,
+      onHold,
       consecutiveWaits,
       consecutiveSameKey,
       consecutiveSamePhrase,

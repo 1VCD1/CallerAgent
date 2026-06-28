@@ -53,6 +53,7 @@ export interface CallContext {
   companyIvrNotes?: string;           // post-call LLM summaries from prior calls to this company
   userCompanyNote?: string;           // user-written tip for this company ("try pressing 0 first")
   currentIvrUtterance?: string;       // what the IVR said just now (this turn only)
+  onHold?: boolean;                   // IVR is queuing us for a human — wait, don't press keys
   consecutiveWaits?: number;
   consecutiveSameKey?: { key: string; count: number };
   consecutiveSamePhrase?: { phrase: string; count: number };

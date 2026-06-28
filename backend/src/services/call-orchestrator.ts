@@ -6,7 +6,7 @@ import { getMemoryPatterns, recordCallOutcome, markActionSuccess, getIvrDecision
 import { emitCallStatus } from './call-events';
 import { generateCallSummary } from './call-summarizer';
 import { initiateOutboundCall, sendDTMF, sayPhrase, createConferenceBridge, createConferenceWithHold, bridgeUserToConference, endCall } from './telephony';
-import { detectHumanCombined, isHoldMusic, extractMenuKeys } from './human-detector';
+import { detectHumanCombined, isHoldMusic, extractMenuKeys, computeActionStreaks, isOnHold } from './human-detector';
 import { AudioAnalyzer, AudioAnalysisResult } from './audio-analyzer';
 import { query, queryOne } from '../db/client';
 import { config } from '../config';
@@ -222,6 +222,9 @@ export class CallOrchestrator {
 
     this.pendingDecision = Promise.all([memoriesPromise, patternsPromise])
       .then(([memories, patterns]) => {
+        // Same loop/on-hold signals the Gather webhook computes, so a consumed prefetch
+        // still shows the LLM the anti-loop and on-hold nudges (cachedRecentActions is DESC).
+        const { consecutiveWaits, consecutiveSameKey, consecutiveSamePhrase } = computeActionStreaks(this.cachedRecentActions);
         const context: CallContext = {
           callId: this.call.id,
           company: this.call.company,
@@ -235,6 +238,10 @@ export class CallOrchestrator {
           recentFailures: this.cachedRecentActions.filter(a => !a.success).map(a => `${a.action}(${a.value})`),
           userInfo: this.userInfo,
           currentIvrUtterance: triggerText,
+          onHold: isOnHold(triggerText),
+          consecutiveWaits,
+          consecutiveSameKey,
+          consecutiveSamePhrase,
           audioAnalysis: this.audioAnalyzer.analyze(),
           speakerChanged: this.speakerChanged,
           companyIvrNotes: this.cachedIvrNotes ?? undefined,
