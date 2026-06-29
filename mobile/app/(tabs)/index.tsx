@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, ActivityIndicator, Alert, Animated, Image,
@@ -9,7 +9,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
-import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
+import { STATUS, ACTIVE_STATUSES, type Palette } from '@/theme';
+import { useThemeColors } from '@/hooks/useTheme';
 import { startCall, getCalls, getCall, endCall, getApiUrl, getCompanyStats, getCompanySuggestions } from '@/api';
 import { useCallStore } from '@/store';
 import { useSSE } from '@/hooks/useSSE';
@@ -39,6 +40,7 @@ const ORB_CFG: Record<OrbState, {
 };
 
 function DynamicOrb({ orbState, speakingTick = 0 }: { orbState: OrbState; speakingTick?: number }) {
+  const c = useThemeColors();
   const breathe      = useRef(new Animated.Value(1)).current;
   const outerOpacity = useRef(new Animated.Value(0.35)).current;
   const burstScale   = useRef(new Animated.Value(1)).current;
@@ -83,7 +85,7 @@ function DynamicOrb({ orbState, speakingTick = 0 }: { orbState: OrbState; speaki
       <Animated.View style={[orb.ringMid, { borderColor: gradColors[0] + '60', transform: [{ scale: breathe }] }]} />
       {/* Inner gradient ring */}
       <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={orb.ringGradient}>
-        <View style={orb.ringCutout}>
+        <View style={[orb.ringCutout, { backgroundColor: c.bg }]}>
           {orbState === 'human'
             ? <Ionicons name="person" size={36} color={gradColors[0]} />
             : <Image source={require('../../assets/Logo_transparent.png')} style={orb.appIcon} />
@@ -134,6 +136,8 @@ interface ActiveCallViewProps {
 
 function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: ActiveCallViewProps) {
   const { t } = useTranslation();
+  const c = useThemeColors();
+  const s = useMemo(() => makeStyles(c), [c]);
   const [showTranscript, setShowTranscript] = useState(false);
   const orbState      = getOrbState(call.status);
   const prevLen       = useRef(0);
@@ -212,11 +216,11 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
                   <View style={s.callConfTrack}>
                     <View style={[s.callConfFill, {
                       width: `${Math.round(confidence * 100)}%` as any,
-                      backgroundColor: confidence > 0.6 ? colors.green : confidence > 0.3 ? colors.yellow : colors.muted,
+                      backgroundColor: confidence > 0.6 ? c.green : confidence > 0.3 ? c.yellow : c.muted,
                     }]} />
                   </View>
                   <Text style={[s.callConfPct, {
-                    color: confidence > 0.6 ? colors.green : confidence > 0.3 ? colors.yellow : colors.muted,
+                    color: confidence > 0.6 ? c.green : confidence > 0.3 ? c.yellow : c.muted,
                   }]}>{Math.round(confidence * 100)}%</Text>
                 </View>
               </View>
@@ -228,14 +232,14 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
 
         {/* Transcript toggle */}
         <TouchableOpacity style={s.transcriptToggle} onPress={() => setShowTranscript(v => !v)}>
-          <Ionicons name="document-text-outline" size={15} color={colors.muted} />
+          <Ionicons name="document-text-outline" size={15} color={c.muted} />
           <Text style={s.transcriptToggleTxt}>{t('live_transcript')}</Text>
           {transcripts.length > 0 && (
             <View style={s.transcriptBadge}>
               <Text style={s.transcriptBadgeTxt}>{transcripts.length}</Text>
             </View>
           )}
-          <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={15} color={colors.muted} style={{ marginLeft: 'auto' }} />
+          <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={15} color={c.muted} style={{ marginLeft: 'auto' }} />
         </TouchableOpacity>
 
         {showTranscript && (
@@ -261,7 +265,7 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
                 return (
                   <View key={tr.id ?? i} style={[s.chatRow, isAI ? s.chatRowRight : s.chatRowLeft]}>
                     <View style={[s.chatBubble, isAI ? s.chatBubbleAI : isHumanSpk ? s.chatBubbleHuman : s.chatBubbleIVR]}>
-                      <Text style={[s.chatSpeaker, { color: isAI ? colors.blue : isHumanSpk ? colors.green : colors.muted }]}>
+                      <Text style={[s.chatSpeaker, { color: isAI ? c.blue : isHumanSpk ? c.green : c.muted }]}>
                         {tr.speaker}
                       </Text>
                       <Text style={[s.chatText, isAI && { color: '#93c5fd' }]}>{tr.text}</Text>
@@ -279,7 +283,7 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
         <View style={s.callBottom}>
           <View style={s.callInfoBox}>
             <View style={s.callInfoIconWrap}>
-              <Ionicons name="phone-portrait" size={18} color={colors.green} />
+              <Ionicons name="phone-portrait" size={18} color={c.green} />
             </View>
             <Text style={s.callInfoTxt}>{t('call_info')}</Text>
           </View>
@@ -293,6 +297,8 @@ function ActiveCallView({ call, cfg, isHuman, confidence, transcripts, onEnd }: 
 
 export default function CallScreen() {
   const { t } = useTranslation();
+  const c = useThemeColors();
+  const s = useMemo(() => makeStyles(c), [c]);
   const router = useRouter();
   const [company, setCompany]     = useState('');
   const [phone, setPhone]         = useState('');
@@ -449,7 +455,7 @@ export default function CallScreen() {
 
         {/* Hero — left-aligned */}
         <View style={s.heroBlock}>
-          <Text style={s.heroTitle}><Text style={{ color: colors.green }}>{t('hero_highlight')}</Text>{t('hero_title_rest')}</Text>
+          <Text style={s.heroTitle}><Text style={{ color: c.green }}>{t('hero_highlight')}</Text>{t('hero_title_rest')}</Text>
           <Text style={s.heroSub}>{t('hero_sub')}</Text>
         </View>
 
@@ -463,15 +469,15 @@ export default function CallScreen() {
 
           <View style={s.companyWrap}>
             <View style={s.iconInput}>
-              <Ionicons name="business-outline" size={18} color={colors.muted} style={s.iconInputIcon} />
+              <Ionicons name="business-outline" size={18} color={c.muted} style={s.iconInputIcon} />
               <TextInput
                 style={s.iconInputField} placeholder={t('company_placeholder')}
-                placeholderTextColor={colors.muted} value={company}
+                placeholderTextColor={c.muted} value={company}
                 onChangeText={setCompany}
               />
               {company.length > 0 && (
                 <TouchableOpacity onPress={() => { setCompany(''); setSuggestions([]); setCompanyStats(null); }}>
-                  <Ionicons name="close-circle" size={17} color={colors.muted} />
+                  <Ionicons name="close-circle" size={17} color={c.muted} />
                 </TouchableOpacity>
               )}
             </View>
@@ -489,12 +495,12 @@ export default function CallScreen() {
                       setShowSuggestions(false);
                     }}
                   >
-                    <Ionicons name="time-outline" size={14} color={colors.muted} style={{ marginRight: 8 }} />
+                    <Ionicons name="time-outline" size={14} color={c.muted} style={{ marginRight: 8 }} />
                     <View style={{ flex: 1 }}>
                       <Text style={s.dropdownCompany}>{item.company}</Text>
                       <Text style={s.dropdownPhone}>{item.phone}</Text>
                     </View>
-                    <Ionicons name="arrow-up-outline" size={13} color={colors.muted} style={{ transform: [{ rotate: '45deg' }] }} />
+                    <Ionicons name="arrow-up-outline" size={13} color={c.muted} style={{ transform: [{ rotate: '45deg' }] }} />
                   </TouchableOpacity>
                 ))}
               </View>
@@ -503,7 +509,7 @@ export default function CallScreen() {
 
           {companyStats && companyStats.total >= 1 && (
             <View style={s.statsHint}>
-              <Ionicons name="bar-chart-outline" size={11} color={colors.muted} />
+              <Ionicons name="bar-chart-outline" size={11} color={c.muted} />
               <Text style={s.statsHintTxt}>
                 {companyStats.total === 1 ? t('stats_calls_one') : t('stats_calls_other', { count: companyStats.total })}
                 {' · '}{t('stats_success', { pct: companyStats.successPct })}
@@ -513,10 +519,10 @@ export default function CallScreen() {
           )}
 
           <View style={[s.iconInput, { marginBottom: 12 }]}>
-            <Ionicons name="call-outline" size={18} color={colors.muted} style={s.iconInputIcon} />
+            <Ionicons name="call-outline" size={18} color={c.muted} style={s.iconInputIcon} />
             <TextInput
               style={s.iconInputField} placeholder={t('phone_placeholder')}
-              placeholderTextColor={colors.muted} value={phone} onChangeText={setPhone} keyboardType="phone-pad"
+              placeholderTextColor={c.muted} value={phone} onChangeText={setPhone} keyboardType="phone-pad"
             />
           </View>
 
@@ -548,7 +554,7 @@ export default function CallScreen() {
           <Text style={s.fieldLabel}>{t('goal_label')} <Text style={s.fieldLabelOpt}>{t('goal_optional')}</Text></Text>
           <TextInput
             style={[s.input, { marginBottom: 8 }]} placeholder={t('goal_placeholder')}
-            placeholderTextColor={colors.muted} value={goal} onChangeText={setGoal}
+            placeholderTextColor={c.muted} value={goal} onChangeText={setGoal}
           />
           <View style={s.goalChips}>
             {([
@@ -598,81 +604,81 @@ export default function CallScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const s = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.bg },
+const makeStyles = (c: Palette) => StyleSheet.create({
+  safe:   { flex: 1, backgroundColor: c.bg },
   scroll: { paddingBottom: 48 },
 
   // Home hero
   heroBlock: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 4 },
-  heroTitle: { fontSize: 34, fontWeight: '800', color: colors.text, lineHeight: 42, letterSpacing: -0.5 },
-  heroSub:   { fontSize: 14, color: colors.subtext, lineHeight: 21, marginTop: 10 },
+  heroTitle: { fontSize: 34, fontWeight: '800', color: c.text, lineHeight: 42, letterSpacing: -0.5 },
+  heroSub:   { fontSize: 14, color: c.subtext, lineHeight: 21, marginTop: 10 },
 
   // Orb
   orbCenter: { alignItems: 'center', paddingVertical: 8 },
 
   // Recent pills
-  recentPill:        { backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: colors.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, marginRight: 8, minWidth: 100, maxWidth: 160 },
-  recentPillCompany: { fontSize: 13, color: colors.text, fontWeight: '700' },
-  recentPillGoal:    { fontSize: 11, color: colors.muted, marginTop: 3 },
+  recentPill:        { backgroundColor: c.overlay, borderWidth: 1, borderColor: c.border, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10, marginRight: 8, minWidth: 100, maxWidth: 160 },
+  recentPillCompany: { fontSize: 13, color: c.text, fontWeight: '700' },
+  recentPillGoal:    { fontSize: 11, color: c.muted, marginTop: 3 },
 
   // Form
   form:          { paddingHorizontal: 22 },
-  fieldLabel:    { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1, marginBottom: 8 },
+  fieldLabel:    { fontSize: 11, fontWeight: '700', color: c.muted, letterSpacing: 1, marginBottom: 8 },
   fieldLabelOpt: { fontWeight: '400', letterSpacing: 0 },
-  input:         { height: 56, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 16, color: colors.text, fontSize: 15, marginBottom: 20 },
+  input:         { height: 56, backgroundColor: c.overlay, borderWidth: 1, borderColor: c.border, borderRadius: 18, paddingHorizontal: 16, color: c.text, fontSize: 15, marginBottom: 20 },
 
   goalChips:         { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  goalChip:          { borderWidth: 1, borderColor: colors.border, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: 'rgba(255,255,255,0.04)' },
-  goalChipActive:    { borderColor: colors.green, backgroundColor: 'rgba(37,211,102,0.12)' },
-  goalChipTxt:       { fontSize: 13, color: colors.subtext },
-  goalChipTxtActive: { color: colors.green, fontWeight: '600' },
+  goalChip:          { borderWidth: 1, borderColor: c.border, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: c.overlay },
+  goalChipActive:    { borderColor: c.green, backgroundColor: 'rgba(37,211,102,0.12)' },
+  goalChipTxt:       { fontSize: 13, color: c.subtext },
+  goalChipTxtActive: { color: c.green, fontWeight: '600' },
 
   formSecondary: { paddingHorizontal: 22, paddingTop: 8, marginBottom: 8 },
   recentSection: { marginBottom: 40 },
 
   companyWrap:    { marginBottom: 12 },
-  iconInput:      { flexDirection: 'row', alignItems: 'center', height: 56, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: colors.border, borderRadius: 18, paddingHorizontal: 16 },
+  iconInput:      { flexDirection: 'row', alignItems: 'center', height: 56, backgroundColor: c.overlay, borderWidth: 1, borderColor: c.border, borderRadius: 18, paddingHorizontal: 16 },
   iconInputIcon:  { marginRight: 10 },
-  iconInputField: { flex: 1, color: colors.text, fontSize: 15 },
+  iconInputField: { flex: 1, color: c.text, fontSize: 15 },
 
-  dropdown:          { marginTop: 4, backgroundColor: '#0f172a', borderWidth: 1, borderColor: colors.border, borderRadius: 14, overflow: 'hidden' },
+  dropdown:          { marginTop: 4, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, borderRadius: 14, overflow: 'hidden' },
   dropdownItem:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12 },
-  dropdownItemBorder:{ borderBottomWidth: 1, borderBottomColor: colors.border },
-  dropdownCompany:   { fontSize: 14, fontWeight: '600', color: colors.text },
-  dropdownPhone:     { fontSize: 11, color: colors.muted, marginTop: 1 },
+  dropdownItemBorder:{ borderBottomWidth: 1, borderBottomColor: c.border },
+  dropdownCompany:   { fontSize: 14, fontWeight: '600', color: c.text },
+  dropdownPhone:     { fontSize: 11, color: c.muted, marginTop: 1 },
   statsHint:      { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: -6, marginBottom: 10, paddingHorizontal: 4 },
-  statsHintTxt:   { fontSize: 11, color: colors.muted },
+  statsHintTxt:   { fontSize: 11, color: c.muted },
 
-  callbackBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#451a03', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 10 },
+  callbackBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(245,158,11,0.14)', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 10 },
   callbackBannerTxt: { flex: 1, color: '#f59e0b', fontSize: 13, lineHeight: 18 },
   startBtnWrap: { borderRadius: 18, overflow: 'hidden', marginTop: 4 },
   startBtn:     { paddingVertical: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   startBtnTxt:  { color: '#fff', fontSize: 16, fontWeight: '700' },
 
   // ── Active call ──
-  callScreen:  { flex: 1, backgroundColor: '#060c18' },
+  callScreen:  { flex: 1, backgroundColor: c.bg },
 
-  callHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: 'rgba(30,41,59,0.6)' },
-  callHeaderTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
+  callHeader:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: c.border },
+  callHeaderTitle: { fontSize: 18, fontWeight: '800', color: c.text },
 
   callCenter:  { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 16 },
   callOrbBlock:{ alignItems: 'center' },
 
   callHumanTextBlock: { alignItems: 'center', marginTop: 24 },
-  callHumanTitle:     { fontSize: 36, fontWeight: '800', color: colors.green, letterSpacing: -0.5 },
+  callHumanTitle:     { fontSize: 36, fontWeight: '800', color: c.green, letterSpacing: -0.5 },
   callHumanSub:       { fontSize: 15, color: 'rgba(37,211,102,0.6)', marginTop: 6 },
 
   // Status block below orb
   callStatusBlock: { alignItems: 'center', marginTop: 20, marginBottom: 4 },
   callStatusLabel: { fontSize: 17, fontWeight: '700', textAlign: 'center', marginBottom: 14, letterSpacing: 0.1 },
   stepRow:         { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  stepDot:         { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.12)' },
-  stepDotDone:     { backgroundColor: 'rgba(255,255,255,0.30)' },
+  stepDot:         { width: 8, height: 8, borderRadius: 4, backgroundColor: c.border },
+  stepDotDone:     { backgroundColor: c.muted },
 
   callConfBlock: { alignItems: 'center', marginTop: 16, width: '75%' },
-  callConfHint:  { fontSize: 12, color: colors.subtext, marginBottom: 8, textAlign: 'center' },
+  callConfHint:  { fontSize: 12, color: c.subtext, marginBottom: 8, textAlign: 'center' },
   callConfRow:   { flexDirection: 'row', alignItems: 'center', gap: 10, width: '100%' },
-  callConfTrack: { flex: 1, height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden' },
+  callConfTrack: { flex: 1, height: 4, backgroundColor: c.border, borderRadius: 2, overflow: 'hidden' },
   callConfFill:  { height: 4, borderRadius: 2 },
   callConfPct:   { fontSize: 13, fontWeight: '700', minWidth: 36 },
 
@@ -680,25 +686,25 @@ const s = StyleSheet.create({
 
   callInfoBox:     { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: 'rgba(37,211,102,0.08)', borderRadius: 14, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(37,211,102,0.2)' },
   callInfoIconWrap:{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(37,211,102,0.15)', alignItems: 'center', justifyContent: 'center' },
-  callInfoTxt:     { flex: 1, fontSize: 13, color: colors.text, lineHeight: 19, fontWeight: '500' },
+  callInfoTxt:     { flex: 1, fontSize: 13, color: c.text, lineHeight: 19, fontWeight: '500' },
 
-  transcriptToggle:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 14, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: colors.border, marginTop: 8 },
-  transcriptToggleTxt: { fontSize: 13, fontWeight: '600', color: colors.subtext },
-  transcriptBadge:     { backgroundColor: colors.border, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
-  transcriptBadgeTxt:  { fontSize: 10, fontWeight: '700', color: colors.muted },
+  transcriptToggle:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 14, paddingHorizontal: 20, borderTopWidth: 1, borderTopColor: c.border, marginTop: 8 },
+  transcriptToggleTxt: { fontSize: 13, fontWeight: '600', color: c.subtext },
+  transcriptBadge:     { backgroundColor: c.border, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
+  transcriptBadgeTxt:  { fontSize: 10, fontWeight: '700', color: c.muted },
   transcriptList:      { flex: 1, alignSelf: 'stretch' },
-  transcriptEmpty:     { color: colors.muted, fontSize: 13, textAlign: 'center', paddingVertical: 16 },
+  transcriptEmpty:     { color: c.muted, fontSize: 13, textAlign: 'center', paddingVertical: 16 },
 
   // Chat bubble layout
   chatRow:         { marginBottom: 8, flexDirection: 'row' },
   chatRowLeft:     { justifyContent: 'flex-start' },
   chatRowRight:    { justifyContent: 'flex-end' },
   chatBubble:      { maxWidth: '78%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
-  chatBubbleIVR:   { backgroundColor: '#1e293b', borderTopLeftRadius: 4 },
-  chatBubbleHuman: { backgroundColor: '#052e16', borderTopLeftRadius: 4 },
-  chatBubbleAI:    { backgroundColor: '#0c1a2e', borderTopRightRadius: 4 },
+  chatBubbleIVR:   { backgroundColor: c.input, borderTopLeftRadius: 4 },
+  chatBubbleHuman: { backgroundColor: 'rgba(37,211,102,0.14)', borderTopLeftRadius: 4 },
+  chatBubbleAI:    { backgroundColor: 'rgba(59,130,246,0.12)', borderTopRightRadius: 4 },
   chatSpeaker:     { fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 4 },
-  chatText:        { fontSize: 13, color: colors.text, lineHeight: 19 },
+  chatText:        { fontSize: 13, color: c.text, lineHeight: 19 },
 
   callEndBtnSmall:    { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#be1c1c', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
   callEndBtnSmallTxt: { color: '#fff', fontSize: 13, fontWeight: '700' },

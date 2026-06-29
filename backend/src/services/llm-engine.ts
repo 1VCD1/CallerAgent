@@ -117,7 +117,9 @@ These OVERRIDE the history. Conversational phrasing alone ("Of course", "How can
     ? `\n⛔ VALID MENU KEYS RIGHT NOW: [${ctx.availableMenuKeys.join(', ')}] — ONLY press these keys. Do NOT press any other key.`
     : '';
 
-  const waitWarning = ctx.consecutiveWaits && ctx.consecutiveWaits >= 2
+  const waitWarning = ctx.onHold
+    ? `\n⏳ ON HOLD — you are in a queue for the next available human. The ONLY correct action is wait("15"). Do NOT press 0, do NOT press any key, do NOT say anything: each of those drops you out of the queue and loops you back to the start (this is the #1 cause of stuck calls). Stay on hold — the human will pick up.`
+    : ctx.consecutiveWaits && ctx.consecutiveWaits >= 2
     ? `\n🚨 WAIT LIMIT: You have waited ${ctx.consecutiveWaits} times in a row. The IVR is likely waiting for YOUR response. You MUST take a non-wait action this turn. Answer the last question or try press_key("0") to escalate.`
     : '';
 

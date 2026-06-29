@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { colors, STATUS, ACTIVE_STATUSES } from '@/theme';
+import { STATUS, ACTIVE_STATUSES, type Palette } from '@/theme';
+import { useThemeColors } from '@/hooks/useTheme';
 import { getCalls, endCall } from '@/api';
 import { useCallStore } from '@/store';
 import { getOutcomeConfig, NON_FAILURE_REASONS } from '@/outcome';
@@ -33,6 +34,8 @@ export default function HistoryScreen() {
   const { t } = useTranslation();
   const timeAgo = useTimeAgo();
   const router = useRouter();
+  const c = useThemeColors();
+  const s = useMemo(() => makeStyles(c), [c]);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter]         = useState<Filter>('all');
   const { callHistory, setCallHistory } = useCallStore();
@@ -98,7 +101,7 @@ export default function HistoryScreen() {
           )}
           {successRate != null && (
             <View style={s.statCell}>
-              <Text style={[s.statValue, { color: colors.green }]}>{successRate}%</Text>
+              <Text style={[s.statValue, { color: c.green }]}>{successRate}%</Text>
               <Text style={s.statLabel}>{t('stat_success_rate')}</Text>
             </View>
           )}
@@ -128,11 +131,11 @@ export default function HistoryScreen() {
         keyExtractor={c => c.id}
         contentContainerStyle={s.list}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.green} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={c.green} />}
         ListEmptyComponent={
           <View style={s.empty}>
             <View style={s.emptyIcon}>
-              <Ionicons name="call-outline" size={30} color={colors.muted} />
+              <Ionicons name="call-outline" size={30} color={c.muted} />
             </View>
             <Text style={s.emptyTxt}>{filter === 'all' ? t('no_sessions') : t('no_matching_sessions')}</Text>
             <Text style={s.emptySubTxt}>{filter === 'all' ? t('start_from_agent') : t('try_filter')}</Text>
@@ -143,11 +146,11 @@ export default function HistoryScreen() {
           const isActive = ACTIVE_STATUSES.includes(item.status);
           const outcome  = getOutcomeConfig(item);
           const confirmed = isSuccess(item);
-          const accentColor = confirmed ? colors.green
-                            : item.user_confirmed === false ? colors.red
-                            : item.status === 'FAILED' ? colors.red
+          const accentColor = confirmed ? c.green
+                            : item.user_confirmed === false ? c.red
+                            : item.status === 'FAILED' ? c.red
                             : isActive ? cfg.color
-                            : outcome.color === '#64748b' ? colors.border : outcome.color;
+                            : outcome.color === '#64748b' ? c.border : outcome.color;
           return (
             <TouchableOpacity
               style={[s.card, { borderLeftColor: accentColor }]}
@@ -186,14 +189,14 @@ export default function HistoryScreen() {
                   const secs = Math.floor((new Date(item.ended_at).getTime() - new Date(item.started_at).getTime()) / 1000);
                   return (
                     <View style={s.statChip}>
-                      <Ionicons name="hourglass-outline" size={11} color={colors.muted} />
+                      <Ionicons name="hourglass-outline" size={11} color={c.muted} />
                       <Text style={s.statChipTxt}>{t('saved_time', { time: fmtSeconds(secs) })}</Text>
                     </View>
                   );
                 })() : null}
                 {item.wait_duration_seconds ? (
                   <View style={s.statChip}>
-                    <Ionicons name="time-outline" size={11} color={colors.muted} />
+                    <Ionicons name="time-outline" size={11} color={c.muted} />
                     <Text style={s.statChipTxt}>{t('wait_time', { time: fmtSeconds(item.wait_duration_seconds) })}</Text>
                   </View>
                 ) : null}
@@ -207,7 +210,7 @@ export default function HistoryScreen() {
                   </TouchableOpacity>
                 )}
 
-                <Ionicons name="chevron-forward" size={13} color={colors.muted} style={{ marginLeft: 'auto' }} />
+                <Ionicons name="chevron-forward" size={13} color={c.muted} style={{ marginLeft: 'auto' }} />
               </View>
             </TouchableOpacity>
           );
@@ -217,34 +220,34 @@ export default function HistoryScreen() {
   );
 }
 
-const s = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.bg },
+const makeStyles = (c: Palette) => StyleSheet.create({
+  safe:   { flex: 1, backgroundColor: c.bg },
   header: { paddingHorizontal: 22, paddingTop: 18, paddingBottom: 14 },
-  title:  { fontSize: 26, fontWeight: '800', color: colors.text },
+  title:  { fontSize: 26, fontWeight: '800', color: c.text },
 
-  statsRow:    { flexDirection: 'row', alignItems: 'center', marginHorizontal: 22, marginBottom: 16, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingVertical: 14 },
+  statsRow:    { flexDirection: 'row', alignItems: 'center', marginHorizontal: 22, marginBottom: 16, backgroundColor: c.card, borderRadius: 16, borderWidth: 1, borderColor: c.border, paddingVertical: 14 },
   statCell:    { flex: 1, alignItems: 'center' },
-  statValue:   { fontSize: 22, fontWeight: '800', color: colors.text },
-  statLabel:   { fontSize: 11, color: colors.muted, marginTop: 2 },
-  statDivider: { width: 1, height: 32, backgroundColor: colors.border },
+  statValue:   { fontSize: 22, fontWeight: '800', color: c.text },
+  statLabel:   { fontSize: 11, color: c.muted, marginTop: 2 },
+  statDivider: { width: 1, height: 32, backgroundColor: c.border },
 
   filterRow:       { flexDirection: 'row', paddingHorizontal: 22, gap: 8, marginBottom: 12 },
-  filterTab:       { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: colors.border, backgroundColor: 'rgba(255,255,255,0.03)' },
-  filterTabActive: { borderColor: colors.green, backgroundColor: 'rgba(37,211,102,0.10)' },
-  filterTabFailed: { borderColor: colors.red,   backgroundColor: 'rgba(239,68,68,0.08)' },
-  filterTxt:       { fontSize: 12, fontWeight: '600', color: colors.muted },
-  filterTxtActive: { color: colors.green },
-  filterTxtFailed: { color: colors.red },
+  filterTab:       { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: c.border, backgroundColor: c.overlay },
+  filterTabActive: { borderColor: c.green, backgroundColor: 'rgba(37,211,102,0.10)' },
+  filterTabFailed: { borderColor: c.red,   backgroundColor: 'rgba(239,68,68,0.08)' },
+  filterTxt:       { fontSize: 12, fontWeight: '600', color: c.muted },
+  filterTxtActive: { color: c.green },
+  filterTxtFailed: { color: c.red },
 
   list: { paddingHorizontal: 22, paddingBottom: 40 },
 
-  card:    { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 4, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 10 },
+  card:    { backgroundColor: c.card, borderRadius: 16, borderWidth: 1, borderColor: c.border, borderLeftWidth: 4, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 10 },
   cardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
-  company: { fontSize: 17, fontWeight: '700', color: colors.text, flex: 1 },
+  company: { fontSize: 17, fontWeight: '700', color: c.text, flex: 1 },
 
-  goal:    { fontSize: 12, color: colors.subtext, marginBottom: 6, marginTop: 2 },
+  goal:    { fontSize: 12, color: c.subtext, marginBottom: 6, marginTop: 2 },
   cardSub: { marginBottom: 8 },
-  timeAgo: { fontSize: 12, color: colors.muted },
+  timeAgo: { fontSize: 12, color: c.muted },
 
   badge:    { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, flexShrink: 1 },
   badgeTxt: { fontSize: 11, fontWeight: '600' },
@@ -253,14 +256,14 @@ const s = StyleSheet.create({
   outcomePillTxt: { fontSize: 11, fontWeight: '600' },
 
   cardMeta:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  statChip:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4 },
-  statChipTxt: { fontSize: 11, color: colors.muted },
+  statChip:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: c.overlay, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4 },
+  statChipTxt: { fontSize: 11, color: c.muted },
 
   endBtn:    { borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', borderRadius: 6, paddingHorizontal: 10, paddingVertical: 3 },
-  endBtnTxt: { color: colors.red, fontSize: 11, fontWeight: '600' },
+  endBtnTxt: { color: c.red, fontSize: 11, fontWeight: '600' },
 
   empty:      { alignItems: 'center', paddingTop: 80, gap: 10 },
-  emptyIcon:  { width: 68, height: 68, borderRadius: 34, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-  emptyTxt:   { fontSize: 16, fontWeight: '600', color: colors.subtext },
-  emptySubTxt:{ fontSize: 13, color: colors.muted },
+  emptyIcon:  { width: 68, height: 68, borderRadius: 34, backgroundColor: c.card, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  emptyTxt:   { fontSize: 16, fontWeight: '600', color: c.subtext },
+  emptySubTxt:{ fontSize: 13, color: c.muted },
 });

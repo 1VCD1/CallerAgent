@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 import { View, ActivityIndicator, Alert } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { Platform } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { onAuthStateChanged, User } from '@/firebase';
 import { authLogin, updateUser, getApiUrl } from '@/api';
 import { useCallStore } from '@/store';
+import { useThemeStore, useThemeColors } from '@/hooks/useTheme';
 import i18n from '@/i18n';
 
 Notifications.setNotificationHandler({
@@ -63,6 +65,13 @@ export default function RootLayout() {
   const { setUserId, setCallbackPhone } = useCallStore();
   const router = useRouter();
   const notifResponseRef = useRef<any>(null);
+  const c = useThemeColors();
+  const mode = useThemeStore((s) => s.mode);
+
+  // Load the persisted theme once on startup (defaults to light if unset).
+  useEffect(() => {
+    useThemeStore.getState().hydrate();
+  }, []);
 
   // Navigate to call detail when user taps a push notification
   useEffect(() => {
@@ -111,17 +120,21 @@ export default function RootLayout() {
 
   if (user === undefined) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#020617', alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#3b82f6" size="large" />
+      <View style={{ flex: 1, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
+        <ActivityIndicator color={c.green} size="large" />
       </View>
     );
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="call/[id]" />
-      <Stack.Screen name="sign-in" options={{ gestureEnabled: false }} />
-    </Stack>
+    <>
+      <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="call/[id]" />
+        <Stack.Screen name="sign-in" options={{ gestureEnabled: false }} />
+      </Stack>
+    </>
   );
 }

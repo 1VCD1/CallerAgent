@@ -14,7 +14,6 @@ if (config.app.sentryDsn) {
 }
 import callsPlugin from './api/routes/calls';
 import webhooksPlugin, { registerRecordingRoutes } from './api/routes/webhooks';
-import analyticsPlugin from './api/routes/analytics';
 import debugPlugin from './api/routes/debug';
 import authPlugin from './api/routes/auth';
 import { activeOrchestrators } from './api/routes/calls';
@@ -212,7 +211,6 @@ async function bootstrap() {
   await fastify.register(authPlugin);
   await fastify.register(callsPlugin);
   await fastify.register(webhooksPlugin);
-  await fastify.register(analyticsPlugin);
   await fastify.register(debugPlugin);
   registerRecordingRoutes(fastify);
 
@@ -222,7 +220,6 @@ async function bootstrap() {
     reply.type('text/html').send('google-site-verification: googlef5d64b292d1527bf.html');
   });
 
-  fastify.get('/dashboard', async (_request, reply) => reply.redirect('/dashboard.html'));
   fastify.get('/debug', async (_request, reply) => reply.redirect('/debug.html'));
 
   fastify.get('/privacy', async (_request, reply) => {
