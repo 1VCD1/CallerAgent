@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -6,11 +6,19 @@ import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { auth, GOOGLE_WEB_CLIENT_ID } from '@/firebase';
+import { type Palette } from '@/theme';
+import { useThemeColors, useThemeStore } from '@/hooks/useTheme';
 
 WebBrowser.maybeCompleteAuthSession();
 
 export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
+  const c = useThemeColors();
+  const mode = useThemeStore((st) => st.mode);
+  const s = useMemo(() => makeStyles(c), [c]);
+  const glow: [string, string, string] = mode === 'dark'
+    ? ['#0f2a4a', c.bg, c.bg]
+    : ['#dbeafe', c.bg, c.bg];
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     webClientId: GOOGLE_WEB_CLIENT_ID,
@@ -37,7 +45,7 @@ export default function SignInScreen() {
     <SafeAreaView style={s.safe}>
       {/* Ambient glow */}
       <LinearGradient
-        colors={['#0f2a4a', '#020617', '#020617']}
+        colors={glow}
         style={StyleSheet.absoluteFill}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 0.6 }}
@@ -81,8 +89,8 @@ export default function SignInScreen() {
   );
 }
 
-const s = StyleSheet.create({
-  safe:      { flex: 1, backgroundColor: '#020617' },
+const makeStyles = (c: Palette) => StyleSheet.create({
+  safe:      { flex: 1, backgroundColor: c.bg },
   container: { flex: 1, paddingHorizontal: 28, paddingVertical: 16, justifyContent: 'space-between' },
 
   brand: {
@@ -92,8 +100,8 @@ const s = StyleSheet.create({
     gap: 10,
   },
   logo:     { width: 68, height: 68, borderRadius: 18, marginBottom: 6 },
-  title:    { fontSize: 34, fontWeight: '300', color: '#f1f5f9', letterSpacing: 1.5 },
-  subtitle: { fontSize: 15, color: '#334155', letterSpacing: 0.3 },
+  title:    { fontSize: 34, fontWeight: '300', color: c.text, letterSpacing: 1.5 },
+  subtitle: { fontSize: 15, color: c.subtext, letterSpacing: 0.3 },
 
   bottom: { gap: 16, paddingBottom: 8 },
   googleBtn: {
@@ -104,9 +112,11 @@ const s = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 16,
     paddingVertical: 17,
+    borderWidth: 1,
+    borderColor: c.border,
   },
   googleG:   { fontSize: 17, fontWeight: '800', color: '#4285F4' },
   googleTxt: { fontSize: 16, fontWeight: '600', color: '#111827' },
   disabled:  { opacity: 0.45 },
-  legal:     { fontSize: 12, color: '#1e293b', textAlign: 'center', lineHeight: 17 },
+  legal:     { fontSize: 12, color: c.muted, textAlign: 'center', lineHeight: 17 },
 });

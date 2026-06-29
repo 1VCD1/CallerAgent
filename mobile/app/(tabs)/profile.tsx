@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Alert, ActivityIndicator, Switch,
@@ -8,11 +8,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTranslation } from 'react-i18next';
-import { colors } from '@/theme';
+import { type Palette } from '@/theme';
+import { useThemeColors, useThemeStore } from '@/hooks/useTheme';
 import { getUser, updateUser, getApiUrl, setApiUrl, getApiKey, setApiKey, getIvrNotes, IvrNote } from '@/api';
 import { useCallStore } from '@/store';
 import { auth, signOut } from '@/firebase';
 import i18n, { AppLanguage } from '@/i18n';
+import type { ThemeMode } from '@/theme';
 
 const LANG_OPTIONS: { value: AppLanguage; tKey: string }[] = [
   { value: 'en',    tKey: 'lang_en' },
@@ -20,8 +22,17 @@ const LANG_OPTIONS: { value: AppLanguage; tKey: string }[] = [
   { value: 'zh-CN', tKey: 'lang_zh_CN' },
 ];
 
+const THEME_OPTIONS: { value: ThemeMode; tKey: string }[] = [
+  { value: 'light', tKey: 'theme_light' },
+  { value: 'dark',  tKey: 'theme_dark' },
+];
+
 export default function ProfileScreen() {
   const { t } = useTranslation();
+  const c = useThemeColors();
+  const s = useMemo(() => makeStyles(c), [c]);
+  const themeMode = useThemeStore((st) => st.mode);
+  const setThemeMode = useThemeStore((st) => st.setMode);
   const { userId, setCallbackPhone } = useCallStore();
   const firebaseUser = auth.currentUser;
 
@@ -37,6 +48,7 @@ export default function ProfileScreen() {
   const [showDev, setShowDev]       = useState(false);
   const [editMode, setEditMode]     = useState(false);
   const [showLangPicker, setShowLangPicker] = useState(false);
+  const [showThemePicker, setShowThemePicker] = useState(false);
 
   const [noteCompany, setNoteCompany] = useState('');
   const [ivrNote, setIvrNote]         = useState<IvrNote | null>(null);
@@ -112,7 +124,7 @@ export default function ProfileScreen() {
           <View style={s.header}>
             <Text style={s.title}>{t('you')}</Text>
             <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut}>
-              <Ionicons name="log-out-outline" size={17} color={colors.red} />
+              <Ionicons name="log-out-outline" size={17} color={c.red} />
               <Text style={s.signOutTxt}>{t('sign_out')}</Text>
             </TouchableOpacity>
           </View>
@@ -135,7 +147,7 @@ export default function ProfileScreen() {
               label={t('callback_phone')}
               value={phone || t('not_set')}
               onPress={() => setEditMode(v => !v)}
-              valueColor={phone ? colors.text : colors.red}
+              valueColor={phone ? c.text : c.red}
               chevronDir={editMode ? 'up' : 'forward'}
             />
             <SettingDivider />
@@ -162,7 +174,36 @@ export default function ProfileScreen() {
                       {t(opt.tKey)}
                     </Text>
                     {language === opt.value && (
-                      <Ionicons name="checkmark" size={16} color={colors.green} />
+                      <Ionicons name="checkmark" size={16} color={c.green} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            <SettingDivider />
+            <SettingRow
+              icon="contrast-outline"
+              label={t('appearance')}
+              value={t(THEME_OPTIONS.find(o => o.value === themeMode)?.tKey ?? 'theme_light')}
+              onPress={() => setShowThemePicker(v => !v)}
+              chevronDir={showThemePicker ? 'up' : 'forward'}
+            />
+            {showThemePicker && (
+              <View style={s.langPicker}>
+                {THEME_OPTIONS.map((opt, i) => (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[s.langOption, i < THEME_OPTIONS.length - 1 && s.langOptionBorder]}
+                    onPress={() => {
+                      setThemeMode(opt.value);
+                      setShowThemePicker(false);
+                    }}
+                  >
+                    <Text style={[s.langOptionTxt, themeMode === opt.value && s.langOptionTxtActive]}>
+                      {t(opt.tKey)}
+                    </Text>
+                    {themeMode === opt.value && (
+                      <Ionicons name="checkmark" size={16} color={c.green} />
                     )}
                   </TouchableOpacity>
                 ))}
@@ -184,7 +225,7 @@ export default function ProfileScreen() {
                 <TextInput
                   style={s.input}
                   placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.muted}
+                  placeholderTextColor={c.muted}
                   value={birthday}
                   keyboardType="number-pad"
                   maxLength={10}
@@ -223,9 +264,9 @@ export default function ProfileScreen() {
 
           {/* Developer options toggle */}
           <TouchableOpacity style={s.devToggle} onPress={() => setShowDev(v => !v)}>
-            <Ionicons name="code-slash-outline" size={15} color={colors.muted} />
+            <Ionicons name="code-slash-outline" size={15} color={c.muted} />
             <Text style={s.devToggleTxt}>{t('dev_options')}</Text>
-            <Ionicons name={showDev ? 'chevron-up' : 'chevron-down'} size={14} color={colors.muted} style={{ marginLeft: 'auto' }} />
+            <Ionicons name={showDev ? 'chevron-up' : 'chevron-down'} size={14} color={c.muted} style={{ marginLeft: 'auto' }} />
           </TouchableOpacity>
 
           {showDev && (
@@ -262,7 +303,7 @@ export default function ProfileScreen() {
                   <TextInput
                     style={[s.input, { flex: 1 }]}
                     placeholder="Company name"
-                    placeholderTextColor={colors.muted}
+                    placeholderTextColor={c.muted}
                     value={noteCompany}
                     onChangeText={t => { setNoteCompany(t); setIvrNote(null); setNoteError(''); }}
                     autoCapitalize="words"
@@ -277,28 +318,28 @@ export default function ProfileScreen() {
                       setNoteLoading(false);
                     }}
                   >
-                    {noteLoading ? <ActivityIndicator size="small" color={colors.blue} /> : <Text style={s.testBtnTxt}>{t('load')}</Text>}
+                    {noteLoading ? <ActivityIndicator size="small" color={c.blue} /> : <Text style={s.testBtnTxt}>{t('load')}</Text>}
                   </TouchableOpacity>
                 </View>
-                {noteError ? <Text style={{ color: colors.muted, fontSize: 13, marginTop: 8 }}>{t('no_ivr_notes')}</Text> : null}
+                {noteError ? <Text style={{ color: c.muted, fontSize: 13, marginTop: 8 }}>{t('no_ivr_notes')}</Text> : null}
                 {ivrNote && (
                   <View style={{ marginTop: 12 }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <View style={[s.outcomeBadge, { backgroundColor: ivrNote.outcome === 'human_reached' ? 'rgba(37,211,102,0.12)' : colors.card }]}>
-                        <Text style={{ fontSize: 12, fontWeight: '700', color: ivrNote.outcome === 'human_reached' ? colors.green : colors.muted }}>
+                      <View style={[s.outcomeBadge, { backgroundColor: ivrNote.outcome === 'human_reached' ? 'rgba(37,211,102,0.12)' : c.card }]}>
+                        <Text style={{ fontSize: 12, fontWeight: '700', color: ivrNote.outcome === 'human_reached' ? c.green : c.muted }}>
                           {ivrNote.outcome === 'human_reached' ? '✓ Human reached' : '✗ ' + ivrNote.outcome}
                         </Text>
                       </View>
-                      <Text style={{ fontSize: 11, color: colors.muted }}>{ivrNote.updated_at.slice(0, 10)}</Text>
+                      <Text style={{ fontSize: 11, color: c.muted }}>{ivrNote.updated_at.slice(0, 10)}</Text>
                     </View>
                     {ivrNote.summary.split('\n').filter(l => l.trim().startsWith('-')).map((line, i) => {
                       const content = line.replace(/^[\s-]+/, '');
                       const parts   = content.split(/\*\*(.*?)\*\*/g);
                       return (
                         <View key={i} style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-                          <Text style={{ fontSize: 16, color: colors.blue, lineHeight: 20 }}>›</Text>
-                          <Text style={{ flex: 1, fontSize: 13, color: colors.subtext, lineHeight: 20 }}>
-                            {parts.map((p, j) => j % 2 === 1 ? <Text key={j} style={{ fontWeight: '700', color: colors.text }}>{p}</Text> : p)}
+                          <Text style={{ fontSize: 16, color: c.blue, lineHeight: 20 }}>›</Text>
+                          <Text style={{ flex: 1, fontSize: 13, color: c.subtext, lineHeight: 20 }}>
+                            {parts.map((p, j) => j % 2 === 1 ? <Text key={j} style={{ fontWeight: '700', color: c.text }}>{p}</Text> : p)}
                           </Text>
                         </View>
                       );
@@ -317,87 +358,92 @@ export default function ProfileScreen() {
 function SettingRow({ icon, label, value, onPress, valueColor, chevronDir = 'forward' }: {
   icon: string; label: string; value?: string; onPress?: () => void; valueColor?: string; chevronDir?: 'forward' | 'up';
 }) {
+  const c = useThemeColors();
+  const sr = useMemo(() => makeRowStyles(c), [c]);
   return (
     <TouchableOpacity style={sr.row} onPress={onPress} disabled={!onPress} activeOpacity={0.7}>
-      <Ionicons name={icon as any} size={18} color={colors.muted} style={{ marginRight: 12 }} />
+      <Ionicons name={icon as any} size={18} color={c.muted} style={{ marginRight: 12 }} />
       <View style={{ flex: 1 }}>
         <Text style={sr.label}>{label}</Text>
         {value && <Text style={[sr.value, valueColor ? { color: valueColor } : {}]}>{value}</Text>}
       </View>
-      {onPress && <Ionicons name={chevronDir === 'up' ? 'chevron-up' : 'chevron-forward'} size={15} color={colors.muted} />}
+      {onPress && <Ionicons name={chevronDir === 'up' ? 'chevron-up' : 'chevron-forward'} size={15} color={c.muted} />}
     </TouchableOpacity>
   );
 }
 
 function SettingDivider() {
-  return <View style={{ height: 1, backgroundColor: colors.border, marginLeft: 46 }} />;
+  const c = useThemeColors();
+  return <View style={{ height: 1, backgroundColor: c.border, marginLeft: 46 }} />;
 }
 
 function Field({ label, hint, required, ...p }: { label: string; hint?: string; required?: boolean } & React.ComponentProps<typeof TextInput>) {
   const { t } = useTranslation();
+  const c = useThemeColors();
+  const s = useMemo(() => makeStyles(c), [c]);
   return (
     <View style={s.fieldWrap}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 }}>
         <Text style={s.fieldLabel}>{label}</Text>
         {required && <Text style={s.fieldRequired}>{t('required')}</Text>}
       </View>
-      <TextInput style={s.input} placeholderTextColor={colors.muted} {...p} />
+      <TextInput style={s.input} placeholderTextColor={c.muted} {...p} />
       {hint && <Text style={s.fieldHint}>{hint}</Text>}
     </View>
   );
 }
 
-const s = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: colors.bg },
+const makeStyles = (c: Palette) => StyleSheet.create({
+  safe:   { flex: 1, backgroundColor: c.bg },
   scroll: { paddingBottom: 120 },
 
   header:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, paddingTop: 18, paddingBottom: 20 },
-  title:      { fontSize: 26, fontWeight: '800', color: colors.text },
+  title:      { fontSize: 26, fontWeight: '800', color: c.text },
   signOutBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  signOutTxt: { fontSize: 14, fontWeight: '600', color: colors.red },
+  signOutTxt: { fontSize: 14, fontWeight: '600', color: c.red },
 
   avatarSection: { alignItems: 'center', paddingBottom: 28 },
-  avatar:        { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.green, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  avatar:        { width: 72, height: 72, borderRadius: 36, backgroundColor: c.green, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   avatarTxt:     { color: '#fff', fontSize: 28, fontWeight: '800' },
-  displayName:   { fontSize: 20, fontWeight: '700', color: colors.text },
-  displayEmail:  { fontSize: 13, color: colors.subtext, marginTop: 3 },
+  displayName:   { fontSize: 20, fontWeight: '700', color: c.text },
+  displayEmail:  { fontSize: 13, color: c.subtext, marginTop: 3 },
 
-  section:      { marginHorizontal: 22, marginBottom: 16, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
-  sectionTitle: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 },
+  section:      { marginHorizontal: 22, marginBottom: 16, backgroundColor: c.card, borderRadius: 16, borderWidth: 1, borderColor: c.border, overflow: 'hidden' },
+  sectionTitle: { fontSize: 11, fontWeight: '700', color: c.muted, letterSpacing: 1, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 },
 
-  editCard:     { marginHorizontal: 22, marginBottom: 12, backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16 },
-  editCardTitle:{ fontSize: 15, fontWeight: '700', color: colors.text, marginBottom: 4 },
-  editCardHint: { fontSize: 12, color: colors.muted, marginBottom: 16, lineHeight: 17 },
+  editCard:     { marginHorizontal: 22, marginBottom: 12, backgroundColor: c.card, borderRadius: 16, borderWidth: 1, borderColor: c.border, padding: 16 },
+  editCardTitle:{ fontSize: 15, fontWeight: '700', color: c.text, marginBottom: 4 },
+  editCardHint: { fontSize: 12, color: c.muted, marginBottom: 16, lineHeight: 17 },
 
   fieldWrap:     { marginBottom: 16 },
-  fieldLabel:    { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 0.8 },
-  fieldRequired: { fontSize: 9, fontWeight: '800', color: colors.red, letterSpacing: 0.6, backgroundColor: 'rgba(239,68,68,0.10)', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
-  input:         { height: 52, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: colors.border, borderRadius: 14, paddingHorizontal: 14, color: colors.text, fontSize: 15 },
-  fieldHint:     { fontSize: 11, color: colors.muted, marginTop: 5, lineHeight: 16 },
+  fieldLabel:    { fontSize: 11, fontWeight: '700', color: c.muted, letterSpacing: 0.8 },
+  fieldRequired: { fontSize: 9, fontWeight: '800', color: c.red, letterSpacing: 0.6, backgroundColor: 'rgba(239,68,68,0.10)', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
+  input:         { height: 52, backgroundColor: c.overlay, borderWidth: 1, borderColor: c.border, borderRadius: 14, paddingHorizontal: 14, color: c.text, fontSize: 15 },
+  fieldHint:     { fontSize: 11, color: c.muted, marginTop: 5, lineHeight: 16 },
 
   saveBtnWrap: { borderRadius: 14, overflow: 'hidden', marginTop: 4 },
   saveBtn:     { paddingVertical: 18, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
   saveBtnTxt:  { color: '#fff', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
-  cancelBtn:   { alignItems: 'center', paddingVertical: 13, marginTop: 4, borderWidth: 1, borderColor: colors.border, borderRadius: 12 },
-  cancelBtnTxt:{ fontSize: 14, fontWeight: '600', color: colors.muted },
+  cancelBtn:   { alignItems: 'center', paddingVertical: 13, marginTop: 4, borderWidth: 1, borderColor: c.border, borderRadius: 12 },
+  cancelBtnTxt:{ fontSize: 14, fontWeight: '600', color: c.muted },
 
-  langPicker:        { borderTopWidth: 1, borderTopColor: colors.border },
+  langPicker:        { borderTopWidth: 1, borderTopColor: c.border },
   langOption:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
-  langOptionBorder:  { borderBottomWidth: 1, borderBottomColor: colors.border },
-  langOptionTxt:     { fontSize: 15, color: colors.subtext },
-  langOptionTxtActive:{ fontSize: 15, color: colors.text, fontWeight: '600' },
+  langOptionBorder:  { borderBottomWidth: 1, borderBottomColor: c.border },
+  langOptionTxt:     { fontSize: 15, color: c.subtext },
+  langOptionTxtActive:{ fontSize: 15, color: c.text, fontWeight: '600' },
 
   devToggle:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 14, paddingHorizontal: 22 },
-  devToggleTxt: { fontSize: 13, fontWeight: '600', color: colors.muted },
+  devToggleTxt: { fontSize: 13, fontWeight: '600', color: c.muted },
 
-  testBtn:    { borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, alignItems: 'center' },
-  testBtnTxt: { color: colors.subtext, fontSize: 13, fontWeight: '600' },
+  testBtn:    { borderWidth: 1, borderColor: c.border, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, alignItems: 'center' },
+  testBtnTxt: { color: c.subtext, fontSize: 13, fontWeight: '600' },
 
   outcomeBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
 });
 
-const sr = StyleSheet.create({
+const makeRowStyles = (c: Palette) => StyleSheet.create({
   row:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
-  label: { fontSize: 15, color: colors.text },
-  value: { fontSize: 13, color: colors.subtext, marginTop: 2 },
+  label: { fontSize: 15, color: c.text },
+  value: { fontSize: 13, color: c.subtext, marginTop: 2 },
 });

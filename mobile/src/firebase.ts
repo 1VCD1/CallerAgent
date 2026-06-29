@@ -1,6 +1,8 @@
+import { Platform } from 'react-native';
 import { getApps, initializeApp } from 'firebase/app';
 import {
   initializeAuth,
+  getAuth,
   onAuthStateChanged as _onAuthStateChanged,
   signOut as _signOut,
   User,
@@ -24,15 +26,17 @@ const FIREBASE_CONFIG = {
 // → Web SDK configuration → Web client ID
 export const GOOGLE_WEB_CLIENT_ID = '765448201002-0uedn3mq2a25itdqo25s5janpmtdrbkq.apps.googleusercontent.com';
 
-// getReactNativePersistence exists in the RN Metro bundle (dist/rn/) but is absent
-// from the Node/TypeScript type declarations — require() bypasses the type check
-const { getReactNativePersistence } = require('firebase/auth');
-
 const app = getApps().length === 0 ? initializeApp(FIREBASE_CONFIG) : getApps()[0];
 
-export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage),
-});
+// Web has no getReactNativePersistence — getAuth() uses the browser's default
+// (indexedDB/local) persistence. Native uses AsyncStorage-backed RN persistence.
+// getReactNativePersistence exists in the RN Metro bundle (dist/rn/) but is absent
+// from the Node/TypeScript type declarations — require() bypasses the type check.
+export const auth = Platform.OS === 'web'
+  ? getAuth(app)
+  : initializeAuth(app, {
+      persistence: require('firebase/auth').getReactNativePersistence(AsyncStorage),
+    });
 
 /** Subscribe to auth state changes. Returns unsubscribe function. */
 export function onAuthStateChanged(callback: (user: User | null) => void): () => void {

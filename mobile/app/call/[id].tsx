@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useTranslation } from 'react-i18next';
-import { colors, STATUS } from '@/theme';
+import { STATUS, type Palette } from '@/theme';
+import { useThemeColors } from '@/hooks/useTheme';
 import { translateGoal } from '@/i18n';
 import { getCall, getApiUrl, getCompanyNote, saveCompanyNote, submitCallFeedback } from '@/api';
 import { getOutcomeConfig } from '@/outcome';
@@ -30,6 +31,8 @@ function formatDuration(startedAt: string, endedAt?: string) {
 
 export default function CallDetailScreen() {
   const { t } = useTranslation();
+  const c = useThemeColors();
+  const s = useMemo(() => makeStyles(c), [c]);
   const { id } = useLocalSearchParams<{ id: string }>();
   const router  = useRouter();
   const [call, setCall]           = useState<Call | null>(null);
@@ -152,7 +155,7 @@ export default function CallDetailScreen() {
   if (loading) {
     return (
       <SafeAreaView style={s.safe}>
-        <ActivityIndicator color={colors.green} style={{ marginTop: 80 }} size="large" />
+        <ActivityIndicator color={c.green} style={{ marginTop: 80 }} size="large" />
       </SafeAreaView>
     );
   }
@@ -161,11 +164,11 @@ export default function CallDetailScreen() {
     return (
       <SafeAreaView style={s.safe}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
+          <Ionicons name="chevron-back" size={22} color={c.text} />
           <Text style={s.backTxt}>{t('back_sessions')}</Text>
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: colors.muted, fontSize: 15 }}>{t('session_not_found')}</Text>
+          <Text style={{ color: c.muted, fontSize: 15 }}>{t('session_not_found')}</Text>
         </View>
       </SafeAreaView>
     );
@@ -181,7 +184,7 @@ export default function CallDetailScreen() {
       {/* Top bar */}
       <View style={s.topBar}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
-          <Ionicons name="chevron-back" size={22} color={colors.text} />
+          <Ionicons name="chevron-back" size={22} color={c.text} />
           <Text style={s.backTxt}>{t('back_sessions')}</Text>
         </TouchableOpacity>
         {isTerminal && (
@@ -235,7 +238,7 @@ export default function CallDetailScreen() {
             <Text style={s.sectionTitle}>{t('transcript')}</Text>
             <View style={s.sectionRight}>
               <Text style={s.sectionCount}>{t('transcript_lines', { count: transcripts.length })}</Text>
-              <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={14} color={colors.muted} />
+              <Ionicons name={showTranscript ? 'chevron-up' : 'chevron-down'} size={14} color={c.muted} />
             </View>
           </TouchableOpacity>
 
@@ -254,7 +257,7 @@ export default function CallDetailScreen() {
                     <View key={tr.id ?? i} style={[s.chatRow, isAI ? s.chatRowRight : s.chatRowLeft]}>
                       <View style={[s.chatBubble, isAI ? s.chatBubbleAI : isHumanSpk ? s.chatBubbleHuman : s.chatBubbleIVR]}>
                         <View style={s.chatMeta}>
-                          <Text style={[s.chatSpeaker, { color: isAI ? colors.blue : isHumanSpk ? colors.green : colors.muted }]}>
+                          <Text style={[s.chatSpeaker, { color: isAI ? c.blue : isHumanSpk ? c.green : c.muted }]}>
                             {tr.speaker}
                           </Text>
                           <Text style={s.chatTime}>{formatTime(tr.timestamp)}</Text>
@@ -263,10 +266,10 @@ export default function CallDetailScreen() {
                         {pct != null && (
                           <View style={s.confRow}>
                             <View style={[s.confDot, {
-                              backgroundColor: pct > 60 ? colors.green : pct > 30 ? colors.yellow : colors.muted,
+                              backgroundColor: pct > 60 ? c.green : pct > 30 ? c.yellow : c.muted,
                             }]} />
                             <Text style={[s.confTxt, {
-                              color: pct > 60 ? colors.green : pct > 30 ? colors.yellow : colors.muted,
+                              color: pct > 60 ? c.green : pct > 30 ? c.yellow : c.muted,
                             }]}>{t('human_confidence', { pct })}</Text>
                           </View>
                         )}
@@ -291,26 +294,26 @@ export default function CallDetailScreen() {
                   onPress={() => submitFeedback(true)}
                   disabled={feedbackSaving}
                 >
-                  <Ionicons name="checkmark-circle-outline" size={16} color={colors.green} />
-                  <Text style={[s.feedbackBtnTxt, { color: colors.green }]}>{t('feedback_yes')}</Text>
+                  <Ionicons name="checkmark-circle-outline" size={16} color={c.green} />
+                  <Text style={[s.feedbackBtnTxt, { color: c.green }]}>{t('feedback_yes')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[s.feedbackBtn, s.feedbackBtnNo]}
                   onPress={() => submitFeedback(false)}
                   disabled={feedbackSaving}
                 >
-                  <Ionicons name="close-circle-outline" size={16} color={colors.red} />
-                  <Text style={[s.feedbackBtnTxt, { color: colors.red }]}>{t('feedback_no')}</Text>
+                  <Ionicons name="close-circle-outline" size={16} color={c.red} />
+                  <Text style={[s.feedbackBtnTxt, { color: c.red }]}>{t('feedback_no')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <View style={[s.feedbackResult, { borderColor: userConfirmed ? colors.green : colors.red }]}>
+              <View style={[s.feedbackResult, { borderColor: userConfirmed ? c.green : c.red }]}>
                 <Ionicons
                   name={userConfirmed ? 'checkmark-circle' : 'close-circle'}
                   size={16}
-                  color={userConfirmed ? colors.green : colors.red}
+                  color={userConfirmed ? c.green : c.red}
                 />
-                <Text style={[s.feedbackResultTxt, { color: userConfirmed ? colors.green : colors.red }]}>
+                <Text style={[s.feedbackResultTxt, { color: userConfirmed ? c.green : c.red }]}>
                   {userConfirmed ? t('feedback_confirmed') : t('feedback_rejected')}
                 </Text>
               </View>
@@ -330,26 +333,26 @@ export default function CallDetailScreen() {
                   onPress={() => submitFeedback(true)}
                   disabled={feedbackSaving}
                 >
-                  <Ionicons name="person-outline" size={16} color={colors.green} />
-                  <Text style={[s.feedbackBtnTxt, { color: colors.green }]}>{t('fn_yes')}</Text>
+                  <Ionicons name="person-outline" size={16} color={c.green} />
+                  <Text style={[s.feedbackBtnTxt, { color: c.green }]}>{t('fn_yes')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[s.feedbackBtn, s.feedbackBtnNo]}
                   onPress={() => submitFeedback(false)}
                   disabled={feedbackSaving}
                 >
-                  <Ionicons name="close-circle-outline" size={16} color={colors.muted} />
-                  <Text style={[s.feedbackBtnTxt, { color: colors.muted }]}>{t('fn_no')}</Text>
+                  <Ionicons name="close-circle-outline" size={16} color={c.muted} />
+                  <Text style={[s.feedbackBtnTxt, { color: c.muted }]}>{t('fn_no')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <View style={[s.feedbackResult, { borderColor: userConfirmed ? colors.green : colors.border }]}>
+              <View style={[s.feedbackResult, { borderColor: userConfirmed ? c.green : c.border }]}>
                 <Ionicons
                   name={userConfirmed ? 'person' : 'checkmark-circle'}
                   size={16}
-                  color={userConfirmed ? colors.green : colors.muted}
+                  color={userConfirmed ? c.green : c.muted}
                 />
-                <Text style={[s.feedbackResultTxt, { color: userConfirmed ? colors.green : colors.muted }]}>
+                <Text style={[s.feedbackResultTxt, { color: userConfirmed ? c.green : c.muted }]}>
                   {userConfirmed ? t('fn_confirmed') : t('fn_rejected')}
                 </Text>
               </View>
@@ -365,7 +368,7 @@ export default function CallDetailScreen() {
             <TextInput
               style={s.noteInput}
               placeholder={t('tip_placeholder')}
-              placeholderTextColor={colors.muted}
+              placeholderTextColor={c.muted}
               value={note}
               onChangeText={setNote}
               maxLength={200}
@@ -377,8 +380,8 @@ export default function CallDetailScreen() {
               disabled={noteSaving}
             >
               {noteSaving
-                ? <ActivityIndicator size="small" color={colors.green} />
-                : <Text style={[s.noteSaveBtnTxt, noteSaved && { color: colors.green }]}>
+                ? <ActivityIndicator size="small" color={c.green} />
+                : <Text style={[s.noteSaveBtnTxt, noteSaved && { color: c.green }]}>
                     {noteSaved ? t('tip_saved') : t('save_tip')}
                   </Text>
               }
@@ -390,8 +393,8 @@ export default function CallDetailScreen() {
         {call.recording_url && (
           <TouchableOpacity style={s.recordingBar} onPress={togglePlayback} disabled={audioLoading} activeOpacity={0.8}>
             {audioLoading
-              ? <ActivityIndicator size="small" color={colors.blue} />
-              : <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={34} color={colors.blue} />
+              ? <ActivityIndicator size="small" color={c.blue} />
+              : <Ionicons name={isPlaying ? 'pause-circle' : 'play-circle'} size={34} color={c.blue} />
             }
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -428,6 +431,8 @@ function fmtMs(ms: number): string {
 }
 
 function StatCell({ label, value }: { label: string; value: string }) {
+  const c = useThemeColors();
+  const s = useMemo(() => makeStyles(c), [c]);
   return (
     <View style={s.statCell}>
       <Text style={s.statLabel}>{label}</Text>
@@ -436,11 +441,11 @@ function StatCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-const s = StyleSheet.create({
-  safe:     { flex: 1, backgroundColor: colors.bg },
-  topBar:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border },
+const makeStyles = (c: Palette) => StyleSheet.create({
+  safe:     { flex: 1, backgroundColor: c.bg },
+  topBar:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: c.border },
   backBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  backTxt:  { fontSize: 16, color: colors.text },
+  backTxt:  { fontSize: 16, color: c.text },
 
   outcomePill:    { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99 },
   outcomePillTxt: { fontSize: 12, fontWeight: '600' },
@@ -448,65 +453,65 @@ const s = StyleSheet.create({
   actionBannerTxt:{ fontSize: 13, flex: 1, lineHeight: 19, fontWeight: '500' },
   scroll:   { padding: 20, paddingBottom: 56 },
 
-  company:  { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: 4 },
-  goal:     { fontSize: 14, color: colors.subtext, marginBottom: 4 },
-  phone:    { fontSize: 13, color: colors.muted, marginBottom: 14 },
+  company:  { fontSize: 24, fontWeight: '800', color: c.text, marginBottom: 4 },
+  goal:     { fontSize: 14, color: c.subtext, marginBottom: 4 },
+  phone:    { fontSize: 13, color: c.muted, marginBottom: 14 },
 
   badges:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
   badge:    { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
   badgeTxt: { fontSize: 12, fontWeight: '600' },
 
   statsGrid:  { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
-  statCell:   { flex: 1, minWidth: '45%', backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 12 },
-  statLabel:  { fontSize: 10, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
-  statValue:  { fontSize: 15, fontWeight: '700', color: colors.text },
+  statCell:   { flex: 1, minWidth: '45%', backgroundColor: c.card, borderRadius: 12, borderWidth: 1, borderColor: c.border, padding: 12 },
+  statLabel:  { fontSize: 10, fontWeight: '700', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  statValue:  { fontSize: 15, fontWeight: '700', color: c.text },
 
-  feedbackCard:      { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 16 },
-  feedbackTitle:     { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1, marginBottom: 6 },
-  feedbackHint:      { fontSize: 12, color: colors.muted, lineHeight: 17, marginBottom: 14 },
+  feedbackCard:      { backgroundColor: c.card, borderRadius: 16, borderWidth: 1, borderColor: c.border, padding: 16, marginBottom: 16 },
+  feedbackTitle:     { fontSize: 11, fontWeight: '700', color: c.muted, letterSpacing: 1, marginBottom: 6 },
+  feedbackHint:      { fontSize: 12, color: c.muted, lineHeight: 17, marginBottom: 14 },
   feedbackBtns:      { flexDirection: 'row', gap: 10 },
   feedbackBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 12, borderWidth: 1 },
-  feedbackBtnYes:    { borderColor: colors.green, backgroundColor: 'rgba(37,211,102,0.08)' },
-  feedbackBtnNo:     { borderColor: colors.red,   backgroundColor: 'rgba(239,68,68,0.08)' },
+  feedbackBtnYes:    { borderColor: c.green, backgroundColor: 'rgba(37,211,102,0.08)' },
+  feedbackBtnNo:     { borderColor: c.red,   backgroundColor: 'rgba(239,68,68,0.08)' },
   feedbackBtnTxt:    { fontSize: 13, fontWeight: '600' },
-  feedbackResult:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, backgroundColor: 'rgba(255,255,255,0.03)' },
+  feedbackResult:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, borderWidth: 1, backgroundColor: c.overlay },
   feedbackResultTxt: { fontSize: 13, fontWeight: '600' },
 
-  noteCard:        { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 16 },
-  noteTitle:       { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1, marginBottom: 6 },
-  noteHint:        { fontSize: 12, color: colors.muted, lineHeight: 17, marginBottom: 12 },
-  noteInput:       { backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 12, color: colors.text, fontSize: 14, lineHeight: 20, minHeight: 60 },
-  noteSaveBtn:     { marginTop: 10, alignItems: 'center', paddingVertical: 10, borderWidth: 1, borderColor: colors.border, borderRadius: 10 },
-  noteSaveBtnDone: { borderColor: colors.green },
-  noteSaveBtnTxt:  { fontSize: 13, fontWeight: '600', color: colors.subtext },
+  noteCard:        { backgroundColor: c.card, borderRadius: 16, borderWidth: 1, borderColor: c.border, padding: 16, marginBottom: 16 },
+  noteTitle:       { fontSize: 11, fontWeight: '700', color: c.muted, letterSpacing: 1, marginBottom: 6 },
+  noteHint:        { fontSize: 12, color: c.muted, lineHeight: 17, marginBottom: 12 },
+  noteInput:       { backgroundColor: c.overlay, borderWidth: 1, borderColor: c.border, borderRadius: 12, padding: 12, color: c.text, fontSize: 14, lineHeight: 20, minHeight: 60 },
+  noteSaveBtn:     { marginTop: 10, alignItems: 'center', paddingVertical: 10, borderWidth: 1, borderColor: c.border, borderRadius: 10 },
+  noteSaveBtnDone: { borderColor: c.green },
+  noteSaveBtnTxt:  { fontSize: 13, fontWeight: '600', color: c.subtext },
 
-  recordingBar:          { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, marginTop: 24 },
-  recordingTitle:        { fontSize: 14, fontWeight: '600', color: colors.text },
-  recordingSubtitle:     { fontSize: 12, color: colors.muted, marginTop: 2 },
-  recordingTime:         { fontSize: 11, color: colors.muted },
-  recordingProgressTrack:{ height: 3, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden', marginTop: 8 },
-  recordingProgressFill: { height: 3, backgroundColor: colors.blue, borderRadius: 2 },
+  recordingBar:          { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: c.card, borderRadius: 14, borderWidth: 1, borderColor: c.border, padding: 14, marginTop: 24 },
+  recordingTitle:        { fontSize: 14, fontWeight: '600', color: c.text },
+  recordingSubtitle:     { fontSize: 12, color: c.muted, marginTop: 2 },
+  recordingTime:         { fontSize: 11, color: c.muted },
+  recordingProgressTrack:{ height: 3, backgroundColor: c.border, borderRadius: 2, overflow: 'hidden', marginTop: 8 },
+  recordingProgressFill: { height: 3, backgroundColor: c.blue, borderRadius: 2 },
 
-  transcriptCard: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, padding: 16, marginBottom: 16 },
+  transcriptCard: { backgroundColor: c.card, borderRadius: 16, borderWidth: 1, borderColor: c.border, padding: 16, marginBottom: 16 },
   sectionRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 2 },
-  sectionTitle: { fontSize: 11, fontWeight: '700', color: colors.muted, letterSpacing: 1 },
+  sectionTitle: { fontSize: 11, fontWeight: '700', color: c.muted, letterSpacing: 1 },
   sectionRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  sectionCount: { fontSize: 12, color: colors.muted },
+  sectionCount: { fontSize: 12, color: c.muted },
 
   empty:    { padding: 28, alignItems: 'center' },
-  emptyTxt: { color: colors.muted, fontSize: 14 },
+  emptyTxt: { color: c.muted, fontSize: 14 },
 
   chatRow:         { flexDirection: 'row' },
   chatRowLeft:     { justifyContent: 'flex-start' },
   chatRowRight:    { justifyContent: 'flex-end' },
   chatBubble:      { maxWidth: '78%', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
-  chatBubbleIVR:   { backgroundColor: '#1e293b', borderTopLeftRadius: 4 },
-  chatBubbleHuman: { backgroundColor: '#052e16', borderTopLeftRadius: 4 },
-  chatBubbleAI:    { backgroundColor: '#0c1a2e', borderTopRightRadius: 4 },
+  chatBubbleIVR:   { backgroundColor: c.input, borderTopLeftRadius: 4 },
+  chatBubbleHuman: { backgroundColor: 'rgba(37,211,102,0.14)', borderTopLeftRadius: 4 },
+  chatBubbleAI:    { backgroundColor: 'rgba(59,130,246,0.12)', borderTopRightRadius: 4 },
   chatMeta:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 },
   chatSpeaker:     { fontSize: 9, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
-  chatTime:        { fontSize: 9, color: colors.muted },
-  chatText:        { fontSize: 13, color: colors.text, lineHeight: 19 },
+  chatTime:        { fontSize: 9, color: c.muted },
+  chatText:        { fontSize: 13, color: c.text, lineHeight: 19 },
   confRow:    { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
   confDot:    { width: 5, height: 5, borderRadius: 3 },
   confTxt:    { fontSize: 10, fontWeight: '600' },
